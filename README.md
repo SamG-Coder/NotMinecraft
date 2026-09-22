@@ -63,7 +63,7 @@ Edits survive movement, terrain-cache regeneration and same-seed teleports. They
 - **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 68 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
 - **Accumulated atomic damage.** Only edited 32 cm pages have logical damage state: 512 saturating integer counters on a 4 cm lattice, plus one removal bit for each of 32,768 centimetre voxels. World seed and voxel position determine immutable fracture thresholds. Same accepted integer events give the same final spatial state independent of processing order. See the [destruction design](docs/destruction.md).
 - **Bounded damage memory.** The GPU reserves a 4096-page pool: 24 MiB for counters/masks plus about 96 KiB for keys and lookup. Saved data includes only allocated page prefixes plus the lookup table. Capacity exhaustion rejects a new stroke in full and reports it, preserving existing edits. The current version does not evict or stream damage pages out of that pool.
-- **60 FPS maximum.** The browser host spaces GPU frame submissions by at least 1/60 second, including on high-refresh displays. Simulation uses elapsed time. The cap is a ceiling; browser scheduling or a slower device can produce a lower rate.
+- **Uncapped frame scheduling.** No fixed FPS limit or timer delay is applied. Frames follow browser animation callbacks and GPU availability; simulation uses elapsed time.
 - **Seeded forest variety.** Oak and birch trees have branching trunks and layered crown clusters; pines have ten tapered foliage tiers. Seeded placement, height, species, centimetre-quantized bounds, bark patterns and foliage shading live in `kernels/world.cu`. Rendering, picking and collision use the same tree bounds. Rays evaluate a tree once per 8 m site.
 - **Bounded GPU queue.** At most one gameplay frame is queued. The canvas width is aligned for a single buffer-to-texture transfer; resolution is capped at 2560 × 1440.
 
@@ -98,7 +98,7 @@ This table records the initial exploration build before mining. Timing tails inc
 
 ```powershell
 npm run build          # Build the Pages site
-node scripts/check-live.mjs # Serve under /NotMinecraft/, exercise GPU and 60 FPS cap
+node scripts/check-live.mjs # Serve under /NotMinecraft/, exercise GPU and uncapped frame scheduling
 npm run check          # Compile all seven CUDA entries to WGSL
 npm test               # Hardware GPU correctness and benchmark cases
 npm run test:ui        # Real browser input, pointer lock, settings, screenshots
@@ -116,7 +116,7 @@ Mining adds **28 GPU checks** and **8 browser mining/persistence checks**. The G
 
 The native test compiles `tests/native.cu`, which includes the authoritative game source. All 66,049 height samples agree within 0.00005 m. The 320 × 200 exact-mode render has a mean RGB channel difference of 0.000224 / 255 versus native CUDA; one of 192,000 channels differs by more than 8. Same-device WebGPU repeat renders are bit-identical. Cross-backend floating-point rendering is tolerance-checked, not claimed bit-identical.
 
-A browser test replaces requestAnimationFrame with 2 ms callbacks and checks actual GPU submission intervals, independently of monitor refresh rate.
+A browser test replaces requestAnimationFrame with 2 ms callbacks and reports actual GPU submission intervals independently of monitor refresh rate. Throughput depends on the browser and hardware.
 
 Tree generation changed with this forest update. Existing damage remains attached to its seed and coordinates, so old tree edits may not line up with the new trees.
 

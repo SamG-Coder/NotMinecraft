@@ -4,8 +4,8 @@ const canvas=$('world'), keys=new Set();
 let runtime, state, heights, pixels, sim, gen, render, simCall, genCall, renderCall;
 let ready=false, menu=true, reset=1, toggleFly=0, mx=0, my=0, width=0, height=0;
 let seed=271828, spawnX=0, spawnZ=0, last=0, lastHud=0, frames=0;
-const FRAME_INTERVAL=1000/60, frameTimes=[];
-let nextFrameAt=0, hudElapsed=0;
+const frameTimes=[];
+let hudElapsed=0;
 let querySet, queryResolve, queryRead, queryPending=false, gpuMs=0;
 let damage, damageStress, damageMeta, mining, prepare, accumulate, resolve, prepareCall, accumulateCall, resolveCall;
 let mineHeld=false, saveNeeded=false, lastMine=0, bufferSeed=seed, db;
@@ -73,9 +73,6 @@ function resize(){
 async function frame(now){
   if(!ready)return;
   try {
-    // Browser scheduling only: never submit gameplay frames faster than 60 Hz.
-    // Await the small remainder rather than dropping a nearly-on-time vsync.
-    while(performance.now()<nextFrameAt)await new Promise(r=>setTimeout(r,Math.max(1,nextFrameAt-performance.now())));
     now=performance.now();
     while(bufferSeed!==seed){await saveWorld();await loadWorld(seed);}
     if(saveNeeded&&!mineHeld&&(menu||now-lastMine>1200)){try{await saveWorld();}catch(error){$('mining-status').textContent='LOCAL SAVE FAILED — KEEP THIS TAB OPEN';console.warn(error);lastMine=now;}}
@@ -95,7 +92,7 @@ async function frame(now){
     batch.endPass();
     batch.encoder.copyBufferToTexture({buffer:pixels.gpuBuffer,bytesPerRow:width*4,rowsPerImage:height},{texture:canvas.getContext('webgpu').getCurrentTexture()},[width,height,1]);
     if(measure){batch.encoder.resolveQuerySet(querySet,0,2,queryResolve,0);batch.encoder.copyBufferToBuffer(queryResolve,0,queryRead,0,16);}
-    batch.submit();if(elapsed>0){frames++;hudElapsed+=elapsed;}const submittedAt=performance.now();nextFrameAt=submittedAt+FRAME_INTERVAL;frameTimes.push(submittedAt);if(frameTimes.length>180)frameTimes.shift();
+    batch.submit();if(elapsed>0){frames++;hudElapsed+=elapsed;}const submittedAt=performance.now();frameTimes.push(submittedAt);if(frameTimes.length>180)frameTimes.shift();
     if(measure){queryPending=true;queryRead.mapAsync(GPUMapMode.READ).then(()=>{const t=new BigUint64Array(queryRead.getMappedRange());gpuMs=Number(t[1]-t[0])/1e6;queryRead.unmap();queryPending=false;}).catch(fail);}
     if(now-lastHud>500){
       lastHud=now;const fps=hudElapsed?frames*1000/hudElapsed:0;frames=0;hudElapsed=0;
@@ -131,7 +128,7 @@ async function start(){
   if(runtime.device.features.has('timestamp-query')){querySet=runtime.device.createQuerySet({type:'timestamp',count:2});queryResolve=runtime.device.createBuffer({size:16,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC});queryRead=runtime.device.createBuffer({size:16,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});}
   ready=true;$('play').disabled=false;$('play').innerHTML='Explore this world <span>↗</span>';$('status').textContent='WORLD ONLINE';
   // Explicit diagnostics hook for reproducible GPU correctness and performance checks.
-  window.game={runtime,state,heights,damage,damageMeta,damageStress,mining,frameLimit:60,get frameTimes(){return frameTimes.slice();},get pixels(){return pixels;},get size(){return [width,height];},get gpuMs(){return gpuMs;},get ready(){return ready;},get seed(){return seed;},setWorld(s,x=0,z=0){$('seed').value=s;$('spawn-x').value=x;$('spawn-z').value=z;return readWorld();}};
+  window.game={runtime,state,heights,damage,damageMeta,damageStress,mining,frameLimit:null,get frameTimes(){return frameTimes.slice();},get pixels(){return pixels;},get size(){return [width,height];},get gpuMs(){return gpuMs;},get ready(){return ready;},get seed(){return seed;},setWorld(s,x=0,z=0){$('seed').value=s;$('spawn-x').value=x;$('spawn-z').value=z;return readWorld();}};
   requestAnimationFrame(frame);
 }
 start().catch(fail);
