@@ -23,7 +23,7 @@ const params=new URLSearchParams(location.search);
 for(const [key,id] of [['seed','seed'],['x','spawn-x'],['z','spawn-z']])if(params.has(key))$(id).value=params.get(key);
 readWorld();
 $('play').onclick=async()=>{if(!ready)return;openMenu(false);try{await canvas.requestPointerLock({unadjustedMovement:true});}catch{try{await canvas.requestPointerLock();}catch{$('hint').hidden=false;}}};
-canvas.onclick=()=>{if(!menu)$('play').click();};
+canvas.onclick=()=>{if(!menu&&document.pointerLockElement!==canvas)$('play').click();};
 $('menu-button').onclick=()=>openMenu(!menu);
 $('seed').onchange=readWorld;
 $('new-seed').onclick=()=>{$('seed').value=(Number($('seed').value)+1)>>>0;readWorld();};
@@ -31,9 +31,9 @@ $('teleport').onclick=readWorld;
 $('tool').onchange=()=>{mineHeld=false;placeTnt=false;$('mining-status').textContent=$('tool').value==='tnt'?'TNT SELECTED - CLICK A SURFACE TO PLACE':'HOLD LEFT MOUSE TO MINE - 6 M REACH';};
 document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==canvas)openMenu(true);else $('hint').hidden=true;});
 document.addEventListener('mousemove',e=>{if(document.pointerLockElement===canvas){mx+=e.movementX;my+=e.movementY;}});
-document.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code==='Escape'){openMenu(true);return;}if(!menu){keys.add(e.code);if(e.code==='KeyF'&&!e.repeat)toggleFly=1;}});
+document.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code==='Escape'){openMenu(true);return;}if(!menu){keys.add(e.code);if(e.code==='KeyF'&&!e.repeat)toggleFly=1;if(!e.repeat&&(e.code==='Digit1'||e.code==='Digit2')){$('tool').value=e.code==='Digit2'?'tnt':'mine';$('tool').onchange();}}});
 document.addEventListener('keyup',e=>keys.delete(e.code));
-document.addEventListener('mousedown',e=>{if(e.button===0&&!menu&&document.pointerLockElement===canvas){if($('tool').value==='tnt')placeTnt=true;else mineHeld=true;}});
+document.addEventListener('mousedown',e=>{if(!menu&&document.pointerLockElement===canvas){if(e.button===2||(e.button===0&&$('tool').value==='tnt')){placeTnt=true;$('tnt-status').textContent='PLACING TNT...';}else if(e.button===0)mineHeld=true;}});
 document.addEventListener('mouseup',e=>{if(e.button===0)mineHeld=false;});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('blur',()=>{keys.clear();mx=my=0;openMenu(true);});
@@ -60,7 +60,7 @@ async function loadWorld(nextSeed){
     for(const [b,data] of [[damageMeta,saved.meta],[damage.damageMap,saved.map],[damage.damageKeys,saved.keys],[damage.damageMask,saved.mask],[damageStress,saved.stress]])runtime.device.queue.writeBuffer(b.gpuBuffer,0,data);
     runtime.device.queue.writeBuffer(state.gpuBuffer,68,new Float32Array([n]));
   }
-  runtime.device.queue.writeBuffer(state.gpuBuffer,88,new Float32Array(10));observedBlasts=0;placeTnt=false;
+  runtime.device.queue.writeBuffer(state.gpuBuffer,88,new Float32Array([0,0,0,0,0,0,0,-1,0,0]));observedBlasts=0;placeTnt=false;
   bufferSeed=nextSeed;saveNeeded=false;reset=1;
 }
 function resize(){
@@ -102,7 +102,7 @@ async function frame(now){
       $('fps').innerHTML=`${Math.round(fps)} <small>FPS</small>`;$('gpu-time').innerHTML=`${querySet?gpuMs.toFixed(2):'N/A'} <small>MS</small>`;
       // Small state and damage telemetry twice per second; no pixel readback.
       runtime.read(state,Float32Array,120).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;if(s[22]>0)$('mining-status').textContent='TNT ARMED - FUSE PAUSES IN MENU';if(s[28]!==observedBlasts){observedBlasts=s[28];saveNeeded=true;lastMine=performance.now();$('mining-status').textContent='TNT DETONATED - WAITING TO SAVE CRATER';}
-        $('tnt-status').textContent=s[22]>0?`TNT FUSE - ${s[22].toFixed(1)}s`:(s[29]===0?'TNT - AIM AT A CLEAR SURFACE WITHIN 6 M':'TNT - READY TO PLACE');$('mode').textContent=s[6]>.5?'FLYING - SPACE UP / CTRL DOWN':'ON FOOT';}).catch(fail);
+        $('tnt-status').textContent=s[22]>0?`TNT FUSE - ${s[22].toFixed(1)}s`:(s[29]===0?'NO TARGET WITHIN 6 M - AIM AT CLOSER GROUND':s[29]===3?'TNT TOO CLOSE TO YOU - AIM FURTHER AHEAD':s[29]===4?'NO ROOM FOR TNT - AIM AT A CLEARER SURFACE':'RIGHT-CLICK TO PLACE TNT - 6 M REACH');$('mode').textContent=s[6]>.5?'FLYING - SPACE UP / CTRL DOWN':'ON FOOT';}).catch(fail);
       runtime.read(damageMeta,Uint32Array).then(m=>{if(m[1])$('mining-status').textContent='EDIT CAPACITY REACHED · EXISTING HOLES PRESERVED';$('edit-pages').textContent=`${m[0]} / 4096 EDIT PAGES`;}).catch(fail);
     }
     // Bound GPU queue depth to one frame; no latency spiral under heavy load.
@@ -136,4 +136,3 @@ async function start(){
   requestAnimationFrame(frame);
 }
 start().catch(fail);
-

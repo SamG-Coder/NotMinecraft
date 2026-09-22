@@ -53,7 +53,7 @@ Edits survive movement, terrain-cache regeneration and same-seed teleports. They
 
 ## TNT
 
-Open the menu with **Esc**, choose **TNT** in the tool selector, then resume and **click the left mouse button** while aiming at a nearby surface. Select **Mine** to return to normal mining.
+While playing, **right-click** to place TNT, regardless of the selected tool. Alternatively, press **2** (or choose **TNT** in the menu) and left-click. Press **1** to return to mining. Aim at a surface within **6 m**, a little ahead of your feet; the HUD explains missing targets, blocked space and player overlap.
 
 - Placement reaches 6 m and checks for a clear 32 cm casing near the aimed surface, outside the player's body. Sky clicks do nothing.
 - One charge can be armed at a time. Its red casing flashes during a **3-second fuse**, which pauses in the menu.

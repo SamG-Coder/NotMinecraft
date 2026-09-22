@@ -1,7 +1,11 @@
 {
   "passed": [
+    "2 equips TNT without opening the menu",
+    "1 switches back to mining",
     "Aiming at the sky cannot place TNT",
-    "TNT tool places a charge on an aimed nearby surface",
+    "Aiming at the player feet gives an explicit overlap message",
+    "Right-click places TNT while Mine is selected",
+    "Placement keeps mouse capture active",
     "Fuse pauses while the menu is open",
     "A second click cannot detonate or replace the armed charge",
     "Fuse applies one larger atomic blast within the page budget",

@@ -418,14 +418,15 @@ __global__ void prepareMining(float* state,const float* heights,unsigned int* da
             if(pressed==2){
                 // Search a short distance back from the aimed surface for a clear casing.
                 for(int attempt=0;attempt<12;attempt++){
-                    float back=28.0f+float(attempt)*4.0f;if(t<back)return;
+                    float back=28.0f+float(attempt)*4.0f;if(t<back){state[29]=3.0f;return;}
                     float cx=floorf((float(ox)+o.x+d.x*(t-back)))*0.01f;
                     float cy=floorf((float(oy)+o.y+d.y*(t-back)))*0.01f;
                     float cz=floorf((float(oz)+o.z+d.z*(t-back)))*0.01f;
-                    int blocked=0;
-                    if(fabsf(cx-state[0])<0.47f && fabsf(cz-state[2])<0.47f && cy+0.16f>state[1]-1.75f && cy-0.16f<state[1])blocked=1;
+                    int blocked=0;int bodyOverlap=0;
+                    if(fabsf(cx-state[0])<0.47f && fabsf(cz-state[2])<0.47f && cy+0.16f>state[1]-1.75f && cy-0.16f<state[1]){blocked=1;bodyOverlap=1;}
                     for(int iz=-1;iz<=1;iz++)for(int iy=-1;iy<=1;iy++)for(int ix=-1;ix<=1;ix++)
                         if(pickSolid(int(floorf((cx+float(ix)*0.16f)*100.0f)),int(floorf((cy+float(iy)*0.16f)*100.0f)),int(floorf((cz+float(iz)*0.16f)*100.0f)),heights,state,seed,damageMap,damageKeys,damageMask)!=0)blocked=1;
+                    state[29]=bodyOverlap!=0?3.0f:4.0f;
                     if(blocked==0){state[22]=3.0f;state[23]=cx;state[24]=cy;state[25]=cz;state[29]=1.0f;return;}
                 }
                 return;
