@@ -1,0 +1,31 @@
+import {chromium} from '../engine/node_modules/playwright/index.mjs';
+import {createStaticServer} from '../engine/scripts/serve.mjs';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+const server=createStaticServer(fileURLToPath(new URL('../',import.meta.url)));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-webgpu']});
+const page=await browser.newPage({viewport:{width:1440,height:960}}),errors=[],passed=[];
+page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+const check=(ok,name)=>{if(!ok)throw Error(name);passed.push(name);};
+const meta=()=>page.evaluate(async()=>Array.from(await game.runtime.read(game.damageMeta,Uint32Array)));
+try{
+ await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForFunction(()=>window.game?.ready,null,{timeout:120000});
+ await page.locator('#play').click();await page.waitForFunction(()=>document.pointerLockElement?.id==='world');
+ await page.evaluate(()=>game.runtime.device.queue.writeBuffer(game.state.gpuBuffer,12,new Float32Array([0.65,-1.12])));await page.waitForTimeout(100);
+ await mkdir('artifacts',{recursive:true});await page.screenshot({path:'artifacts/mining-before.png'});
+ await page.mouse.down();await page.waitForTimeout(3500);await page.mouse.up();await page.waitForTimeout(100);
+ const mined=await meta();check(mined[0]>0&&mined[2]>100&&mined[3]>3,'Holding left mouse aims, accumulates damage and removes centimetre voxels');
+ check(mined[1]===0,'Normal mining stays within the sparse page budget');
+ await page.screenshot({path:'artifacts/mining-after.png'});
+ await page.waitForFunction(()=>document.getElementById('mining-status').textContent.includes('SAVED'),null,{timeout:10000});
+ check(true,'Mining state autosaves after releasing the button');
+ const saved=await meta();await page.keyboard.press('Escape');
+ await page.evaluate(()=>game.setWorld(271828,128,-128));await page.waitForTimeout(300);
+ check(JSON.stringify(await meta())===JSON.stringify(saved),'Moving to another cache region preserves all damage');
+ await page.evaluate(()=>game.setWorld(99));await page.waitForTimeout(400);check((await meta())[0]===0,'Different seed starts with independent destruction state');
+ await page.evaluate(()=>game.setWorld(271828));await page.waitForTimeout(500);check(JSON.stringify(await meta())===JSON.stringify(saved),'Returning to the original seed restores accumulated damage');
+ await page.reload();await page.waitForFunction(()=>window.game?.ready,null,{timeout:120000});await page.waitForTimeout(200);
+ check(JSON.stringify(await meta())===JSON.stringify(saved),'Reload restores saved damage from IndexedDB');
+ check(errors.length===0&&await page.locator('#error').isHidden(),'Mining and persistence produce no browser or WebGPU errors');
+ const report={passed,errors,meta:saved,gpuMs:await page.evaluate(()=>game.gpuMs)};console.log(JSON.stringify(report,null,2));await writeFile('artifacts/mining-ui-report.json',JSON.stringify(report,null,2));
+}finally{await browser.close();await new Promise(r=>server.close(r));}

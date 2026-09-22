@@ -1,0 +1,19 @@
+{
+  "name": "notminecraft",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node engine/scripts/serve.mjs .",
+    "check": "node scripts/check.mjs",
+    "test": "node scripts/test.mjs",
+    "test:ui": "node scripts/ui-test.mjs",
+    "test:mining": "node scripts/test.mjs mining",
+    "test:mining-ui": "node scripts/mining-ui-test.mjs",
+    "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-check.ps1",
+    "build": "node scripts/build.mjs",
+    "check:site": "node scripts/check-site.mjs"
+  }
+}

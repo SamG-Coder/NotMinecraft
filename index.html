@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NotMinecraft — Small blocks. Big world.</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css"></head>
+<body>
+<canvas id="world" aria-label="Seeded voxel world"></canvas>
+<div class="vignette"></div>
+<header><a class="brand" href="./">▧ <span>NOTMINECRAFT<small>THE MICRO VOXEL EXPERIMENT</small></span></a><div class="top-right"><span class="live-dot"></span><span id="status">COMPILING CUDA</span><button id="menu-button" title="Open world settings">ESC <span>MENU</span></button></div></header>
+<aside class="telemetry"><div><span class="label">FRAME RATE</span><strong id="fps">— <small>FPS</small></strong></div><div><span class="label">GPU FRAME</span><strong id="gpu-time">— <small>MS</small></strong></div><div><span class="label">BLOCK EDGE</span><strong>0.01 <small>M</small></strong></div></aside>
+<main id="menu">
+ <div class="eyebrow"><span></span> PROCEDURAL WORLD / 001</div>
+ <h1>Small blocks.<br><em>Big world.</em></h1>
+ <p class="intro">A world built from centimetres.<br>Pick a seed. Find your own way through it.</p>
+ <div class="world-form">
+  <label for="seed">WORLD SEED <span>Same seed. Same place. Every time.</span></label>
+  <div class="seed-row"><input id="seed" type="number" min="0" max="4294967295" value="271828" step="1"><button id="new-seed" title="Next seed">↻</button></div>
+  <div class="settings-row"><label>RESOLUTION<select id="resolution"><option value="0.5">Fast · 50%</option><option value="0.75" selected>Balanced · 75%</option><option value="1">Native · 100%</option></select></label><label>VIEW DISTANCE<select id="distance"><option value="96">96 metres</option><option value="160" selected>160 metres</option><option value="208">208 metres</option></select></label></div>
+  <label class="checkbox"><input type="checkbox" id="exact" checked> Exact 1 cm detail at every distance</label>
+  <details><summary>Go to a location</summary><div class="settings-row"><label>X / METRES<input id="spawn-x" type="number" value="0" min="-8192" max="8192"></label><label>Z / METRES<input id="spawn-z" type="number" value="0" min="-8192" max="8192"></label></div><button id="teleport">REGENERATE AT LOCATION ↗</button></details>
+  <button id="play" disabled>Building your world… <span>↗</span></button>
+ </div>
+ <div class="menu-foot"><span>01 CM VOXELS</span><i></i><span>SEEDED TERRAIN</span><i></i><span>GPU RESIDENT</span></div>
+</main>
+<div id="crosshair" hidden><i></i><b></b></div>
+<div id="hint" hidden>Click to capture mouse · Esc to release</div>
+<div class="mining-info"><span id="mining-status">HOLD LEFT MOUSE TO MINE · 6 M REACH</span><small id="edit-pages">0 / 4096 EDIT PAGES</small></div>
+<footer><div class="coordinates"><span class="label">YOUR LOCATION</span><span id="coords">X 0.00 &nbsp; Y — &nbsp; Z 0.00</span><span id="mode">ON FOOT</span></div><div class="controls"><span><kbd>W A S D</kbd> Move</span><span><kbd>MOUSE</kbd> Look</span><span><kbd>SPACE</kbd> Jump</span><span><kbd>SHIFT</kbd> Sprint</span><span><kbd>F</kbd> Fly</span></div><span class="version">EXPLORATION BUILD 0.1</span></footer>
+<div id="error" hidden role="alert"></div>
+<script type="module" src="./app.js"></script>
+</body></html>
+

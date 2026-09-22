@@ -1,0 +1,137 @@
+{
+  "passed": [
+    "Terrain heights are finite and bounded",
+    "Player spawns above terrain",
+    "Same seed and coordinates reproduce every cached height exactly",
+    "Different seeds change terrain",
+    "Streaming across positive and negative cache boundaries preserves shared heights",
+    "Stationary player does not regenerate the terrain cache",
+    "Negative distant spawn remains finite and preserves requested coordinates",
+    "Walking updates position on the GPU",
+    "Jump applies positive vertical velocity",
+    "Fly toggle and vertical movement run on the GPU",
+    "Independent seeded hash locates a test tree",
+    "Player body is blocked by a procedurally placed tree trunk",
+    "Exact-mode image is bit-identical across repeated GPU renders",
+    "Framebuffer is opaque and contains rendered scene detail",
+    "All cached heights agree with independently executed native CUDA within 0.00005 m",
+    "Exact-mode image agrees with native CUDA (mean channel error <1, >99% channels within 8/255)",
+    "Exact centimetre rendering remains populated at distant negative coordinates",
+    "No WebGPU validation or device errors"
+  ],
+  "benchmarks": [
+    {
+      "scene": "spawn",
+      "width": 1024,
+      "height": 720,
+      "exact": 0,
+      "medianMs": 1.211968,
+      "p95Ms": 1.233664,
+      "samples": 30
+    },
+    {
+      "scene": "spawn",
+      "width": 1920,
+      "height": 1080,
+      "exact": 0,
+      "medianMs": 1.88528,
+      "p95Ms": 2.22368,
+      "samples": 30
+    },
+    {
+      "scene": "spawn",
+      "width": 1920,
+      "height": 1080,
+      "exact": 1,
+      "medianMs": 1.87888,
+      "p95Ms": 5.144448,
+      "samples": 30
+    },
+    {
+      "scene": "aerial",
+      "width": 1024,
+      "height": 720,
+      "exact": 0,
+      "medianMs": 0.649568,
+      "p95Ms": 0.65216,
+      "samples": 30
+    },
+    {
+      "scene": "aerial",
+      "width": 1920,
+      "height": 1080,
+      "exact": 0,
+      "medianMs": 1.582688,
+      "p95Ms": 4.761792,
+      "samples": 30
+    },
+    {
+      "scene": "aerial",
+      "width": 1920,
+      "height": 1080,
+      "exact": 1,
+      "medianMs": 2.256864,
+      "p95Ms": 5.45648,
+      "samples": 30
+    },
+    {
+      "scene": "cache-rebuild",
+      "width": 1024,
+      "height": 720,
+      "exact": 0,
+      "medianMs": 1.2104,
+      "p95Ms": 1.213664,
+      "samples": 30
+    },
+    {
+      "scene": "cache-rebuild",
+      "width": 1920,
+      "height": 1080,
+      "exact": 0,
+      "medianMs": 1.884256,
+      "p95Ms": 1.889056,
+      "samples": 30
+    },
+    {
+      "scene": "cache-rebuild",
+      "width": 1920,
+      "height": 1080,
+      "exact": 1,
+      "medianMs": 1.882176,
+      "p95Ms": 4.994304,
+      "samples": 30
+    }
+  ],
+  "errors": [],
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "blackwell",
+    "device": "",
+    "description": "",
+    "features": [
+      "core-features-and-limits",
+      "subgroup-size-control",
+      "shader-f16",
+      "float32-filterable",
+      "subgroups",
+      "timestamp-query"
+    ],
+    "timestampQuery": true,
+    "limits": {
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupStorageSize": 16384,
+      "maxStorageBufferBindingSize": 268435456
+    }
+  },
+  "nativeImage": {
+    "meanChannelError": 0.00022395833333333333,
+    "maxChannelError": 10,
+    "channelsOver8": 1,
+    "totalChannels": 192000
+  },
+  "heightSamples": [
+    41.17853546142578,
+    26.78907585144043,
+    29.144643783569336
+  ]
+}

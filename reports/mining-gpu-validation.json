@@ -1,0 +1,77 @@
+{
+  "passed": [
+    "Accumulated integer damage fractures centimetre voxels",
+    "Reversing overlapping event order gives identical spatial stress and removal bits",
+    "Independent CPU reference agrees on 4096 damage cells and 262144 voxels, including negative coordinates",
+    "Sparse mining page coordinates agree exactly with native CUDA",
+    "All integer damage cells agree bit-for-bit with native CUDA",
+    "All seeded fracture bits agree bit-for-bit with native CUDA",
+    "Additional hits never restore removed voxels",
+    "Changing seed changes the fracture pattern for the same damage field",
+    "27 concurrent writers per damage cell saturate exactly without overflow or lost updates",
+    "Page exhaustion rejects an entire new stroke without erasing or partially applying edits",
+    "Player falls into a sufficiently wide mined hole instead of standing on the original heightfield",
+    "Mined-hole collision finds surviving floor beneath the player",
+    "Dry-land excavations below sea level have no invisible water floor",
+    "Active-mining benchmark performed real strokes and removed voxels",
+    "No WebGPU validation errors"
+  ],
+  "benchmarks": [
+    {
+      "scene": "ground view, pristine",
+      "width": 1920,
+      "height": 1080,
+      "exact": true,
+      "samples": 30,
+      "medianMs": 0.412544,
+      "p95Ms": 0.477024
+    },
+    {
+      "scene": "ground view, active mining every frame",
+      "width": 1920,
+      "height": 1080,
+      "exact": true,
+      "samples": 30,
+      "medianMs": 0.937664,
+      "p95Ms": 1.459168
+    },
+    {
+      "scene": "horizon view after mining",
+      "width": 1920,
+      "height": 1080,
+      "exact": true,
+      "samples": 30,
+      "medianMs": 2.34544,
+      "p95Ms": 2.71056
+    }
+  ],
+  "errors": [],
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "blackwell",
+    "device": "",
+    "description": "",
+    "features": [
+      "core-features-and-limits",
+      "subgroup-size-control",
+      "shader-f16",
+      "float32-filterable",
+      "subgroups",
+      "timestamp-query"
+    ],
+    "timestampQuery": true,
+    "limits": {
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupStorageSize": 16384,
+      "maxStorageBufferBindingSize": 268435456
+    }
+  },
+  "pitDropMetres": 0.5,
+  "belowSeaFeet": 14.360000610351562,
+  "benchmarkDamage": [
+    29,
+    0,
+    33699,
+    35
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "passed": [
+    "Holding left mouse aims, accumulates damage and removes centimetre voxels",
+    "Normal mining stays within the sparse page budget",
+    "Mining state autosaves after releasing the button",
+    "Moving to another cache region preserves all damage",
+    "Different seed starts with independent destruction state",
+    "Returning to the original seed restores accumulated damage",
+    "Reload restores saved damage from IndexedDB",
+    "Mining and persistence produce no browser or WebGPU errors"
+  ],
+  "errors": [],
+  "meta": [
+    29,
+    0,
+    34574,
+    36
+  ],
+  "gpuMs": 1.61648
+}

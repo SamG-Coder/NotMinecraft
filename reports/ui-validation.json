@@ -1,0 +1,15 @@
+{
+  "passed": [
+    "Exact centimetre rendering is enabled by default",
+    "Explore button captures mouse and opens the game",
+    "W key moves the actual player through browser input",
+    "F and Space activate flight and climb",
+    "Mouse movement changes GPU camera angles",
+    "Escape returns to the menu",
+    "Seed input regenerates the world",
+    "Location controls regenerate at the requested coordinates",
+    "Resize and resolution controls reallocate the framebuffer correctly",
+    "UI play session has no application or WebGPU errors"
+  ],
+  "errors": []
+}
