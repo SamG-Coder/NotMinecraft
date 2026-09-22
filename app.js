@@ -8,10 +8,11 @@ const frameTimes=[];
 let hudElapsed=0;
 let querySet, queryResolve, queryRead, queryPending=false, gpuMs=0;
 let damage, damageStress, damageMeta, mining, prepare, accumulate, resolve, prepareCall, accumulateCall, resolveCall;
+let placeTnt=false, observedBlasts=0;
 let mineHeld=false, saveNeeded=false, lastMine=0, bufferSeed=seed, db;
 const sessionSaves=new Map();
 const fail=error=>{$('error').hidden=false;$('error').textContent=String(error?.stack||error);$('status').textContent='GPU ERROR';console.error(error);};
-function openMenu(show){menu=show;$('menu').hidden=!show;document.body.classList.toggle('playing',!show);$('crosshair').hidden=show;$('hint').hidden=show||document.pointerLockElement===canvas;if(show){keys.clear();mx=my=0;mineHeld=false;if(document.pointerLockElement)document.exitPointerLock();}}
+function openMenu(show){menu=show;$('menu').hidden=!show;document.body.classList.toggle('playing',!show);$('crosshair').hidden=show;$('hint').hidden=show||document.pointerLockElement===canvas;if(show){keys.clear();mx=my=0;mineHeld=false;placeTnt=false;if(document.pointerLockElement)document.exitPointerLock();}}
 function readWorld(){
   const nextSeed=Number($('seed').value),x=Number($('spawn-x').value),z=Number($('spawn-z').value);
   if(!Number.isInteger(nextSeed)||nextSeed<0||nextSeed>4294967295||![x,z].every(v=>Number.isFinite(v)&&Math.abs(v)<=8192)){fail(new Error('Use a whole-number seed from 0 to 4294967295, and coordinates between -8192 and 8192 metres.'));return false;}
@@ -27,20 +28,21 @@ $('menu-button').onclick=()=>openMenu(!menu);
 $('seed').onchange=readWorld;
 $('new-seed').onclick=()=>{$('seed').value=(Number($('seed').value)+1)>>>0;readWorld();};
 $('teleport').onclick=readWorld;
+$('tool').onchange=()=>{mineHeld=false;placeTnt=false;$('mining-status').textContent=$('tool').value==='tnt'?'TNT SELECTED - CLICK A SURFACE TO PLACE':'HOLD LEFT MOUSE TO MINE - 6 M REACH';};
 document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==canvas)openMenu(true);else $('hint').hidden=true;});
 document.addEventListener('mousemove',e=>{if(document.pointerLockElement===canvas){mx+=e.movementX;my+=e.movementY;}});
 document.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code==='Escape'){openMenu(true);return;}if(!menu){keys.add(e.code);if(e.code==='KeyF'&&!e.repeat)toggleFly=1;}});
 document.addEventListener('keyup',e=>keys.delete(e.code));
-document.addEventListener('mousedown',e=>{if(e.button===0&&!menu&&document.pointerLockElement===canvas)mineHeld=true;});
+document.addEventListener('mousedown',e=>{if(e.button===0&&!menu&&document.pointerLockElement===canvas){if($('tool').value==='tnt')placeTnt=true;else mineHeld=true;}});
 document.addEventListener('mouseup',e=>{if(e.button===0)mineHeld=false;});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('blur',()=>{keys.clear();mx=my=0;openMenu(true);});
 document.addEventListener('visibilitychange',()=>{keys.clear();last=0;});
 function openDatabase(){return new Promise((res,rej)=>{const request=indexedDB.open('notminecraft-destruction',1);request.onupgradeneeded=()=>request.result.createObjectStore('worlds');request.onsuccess=()=>res(request.result);request.onerror=()=>rej(request.error);});}
 function storedWorld(key){return new Promise((res,rej)=>{const r=db.transaction('worlds').objectStore('worlds').get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
-async function saveWorld(){
+async function saveWorld(force=false){
   // Called between frames, so all buffers belong to one consistent snapshot.
-  if(!saveNeeded)return;
+  if(!saveNeeded&&!force)return;
   const meta=await runtime.read(damageMeta,Uint32Array);const count=meta[0];
   const [map,keys,mask,stress]=await Promise.all([runtime.read(damage.damageMap,Uint32Array),runtime.read(damage.damageKeys,Int32Array,Math.max(4,count*16)),runtime.read(damage.damageMask,Uint32Array,Math.max(4,count*4096)),runtime.read(damageStress,Uint32Array,Math.max(4,count*2048))]);
   const snapshot={version:1,meta,map,keys,mask,stress};sessionSaves.set(bufferSeed,snapshot);saveNeeded=false;
@@ -58,6 +60,7 @@ async function loadWorld(nextSeed){
     for(const [b,data] of [[damageMeta,saved.meta],[damage.damageMap,saved.map],[damage.damageKeys,saved.keys],[damage.damageMask,saved.mask],[damageStress,saved.stress]])runtime.device.queue.writeBuffer(b.gpuBuffer,0,data);
     runtime.device.queue.writeBuffer(state.gpuBuffer,68,new Float32Array([n]));
   }
+  runtime.device.queue.writeBuffer(state.gpuBuffer,88,new Float32Array(10));observedBlasts=0;placeTnt=false;
   bufferSeed=nextSeed;saveNeeded=false;reset=1;
 }
 function resize(){
@@ -74,16 +77,16 @@ async function frame(now){
   if(!ready)return;
   try {
     now=performance.now();
-    while(bufferSeed!==seed){await saveWorld();await loadWorld(seed);}
+    while(bufferSeed!==seed){await saveWorld(true);await loadWorld(seed);}
     if(saveNeeded&&!mineHeld&&(menu||now-lastMine>1200)){try{await saveWorld();}catch(error){$('mining-status').textContent='LOCAL SAVE FAILED — KEEP THIS TAB OPEN';console.warn(error);lastMine=now;}}
     if(document.hidden){last=0;requestAnimationFrame(frame);return;}
     resize();
     const elapsed=last?now-last:0;const dt=Math.min(elapsed/1000,0.05);last=now;
     const active=!menu&&document.pointerLockElement===canvas;
-    const pressed=active&&mineHeld;if(pressed){saveNeeded=true;lastMine=now;$('mining-status').textContent='MINING · 1 CM FRACTURE';}
+    const pressed=active&&mineHeld;const placing=active&&placeTnt;placeTnt=false;if(placing){saveNeeded=true;lastMine=now;}if(pressed){saveNeeded=true;lastMine=now;$('mining-status').textContent='MINING · 1 CM FRACTURE';}
     simCall.setScalars({dt:active?dt:0,forward:active?Number(keys.has('KeyW'))-Number(keys.has('KeyS')):0,strafe:active?Number(keys.has('KeyD'))-Number(keys.has('KeyA')):0,rise:active?Number(keys.has('Space'))-Number(keys.has('ControlLeft')||keys.has('KeyC')):0,lookX:mx,lookY:my,sprint:Number(keys.has('ShiftLeft')||keys.has('ShiftRight')),toggleFly,reset,seed,spawnX,spawnZ});
     mx=my=0;toggleFly=0;reset=0;genCall.setScalars({seed});renderCall.setScalars({width,height,seed,viewDistance:Number($('distance').value),exact:Number($('exact').checked)});
-    prepareCall.setScalars({dt:active?dt:0,pressed:Number(pressed),seed});resolveCall.setScalars({seed});
+    prepareCall.setScalars({dt:active?dt:0,pressed:placing?2:Number(pressed),seed});resolveCall.setScalars({seed});
     const measure=querySet&&!queryPending&&now-lastHud>500;
     const batch=runtime.batch(measure?{timestampWrites:{querySet,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}}:{});
     batch.dispatch(simCall,[1,1,1]);batch.dispatch(genCall,[517,1,1]);
@@ -97,8 +100,9 @@ async function frame(now){
     if(now-lastHud>500){
       lastHud=now;const fps=hudElapsed?frames*1000/hudElapsed:0;frames=0;hudElapsed=0;
       $('fps').innerHTML=`${Math.round(fps)} <small>FPS</small>`;$('gpu-time').innerHTML=`${querySet?gpuMs.toFixed(2):'N/A'} <small>MS</small>`;
-      // Only 52 bytes for the HUD twice per second. Never read pixels or world data.
-      runtime.read(state,Float32Array,52).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;$('mode').textContent=s[6]>.5?'FLYING · SPACE ↑ / CTRL ↓':'ON FOOT';}).catch(fail);
+      // Small state and damage telemetry twice per second; no pixel readback.
+      runtime.read(state,Float32Array,120).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;if(s[22]>0)$('mining-status').textContent='TNT ARMED - FUSE PAUSES IN MENU';if(s[28]!==observedBlasts){observedBlasts=s[28];saveNeeded=true;lastMine=performance.now();$('mining-status').textContent='TNT DETONATED - WAITING TO SAVE CRATER';}
+        $('tnt-status').textContent=s[22]>0?`TNT FUSE - ${s[22].toFixed(1)}s`:(s[29]===0?'TNT - AIM AT A CLEAR SURFACE WITHIN 6 M':'TNT - READY TO PLACE');$('mode').textContent=s[6]>.5?'FLYING - SPACE UP / CTRL DOWN':'ON FOOT';}).catch(fail);
       runtime.read(damageMeta,Uint32Array).then(m=>{if(m[1])$('mining-status').textContent='EDIT CAPACITY REACHED · EXISTING HOLES PRESERVED';$('edit-pages').textContent=`${m[0]} / 4096 EDIT PAGES`;}).catch(fail);
     }
     // Bound GPU queue depth to one frame; no latency spiral under heavy load.
@@ -116,7 +120,7 @@ async function start(){
   resolve=await runtime.kernel(source,{entry:'resolveMining',workgroupSize:[128,1,1]});
   state=runtime.createBuffer(new Float32Array(32));heights=runtime.createBuffer(66049*4);
   damage={damageMap:runtime.createBuffer(8192*4),damageKeys:runtime.createBuffer(4096*16),damageMask:runtime.createBuffer(4096*4096)};
-  damageStress=runtime.createBuffer(4096*2048);damageMeta=runtime.createBuffer(16);mining=runtime.createBuffer(64*4);
+  damageStress=runtime.createBuffer(4096*2048);damageMeta=runtime.createBuffer(16);mining=runtime.createBuffer(512*4);
   try{db=await openDatabase();}catch{$('mining-status').textContent='LOCAL STORAGE UNAVAILABLE · SESSION ONLY';}
   await loadWorld(seed);
   simCall=sim.bind({state,...damage},{dt:0,forward:0,strafe:0,rise:0,lookX:0,lookY:0,sprint:0,toggleFly:0,reset:1,seed,spawnX,spawnZ});
@@ -132,3 +136,4 @@ async function start(){
   requestAnimationFrame(frame);
 }
 start().catch(fail);
+

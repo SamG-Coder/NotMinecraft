@@ -7,3 +7,5 @@
 main{max-height:calc(100dvh - 210px);overflow-y:auto;scrollbar-width:thin}
 .legal-notice{max-width:355px;margin:17px 0 0;font-size:10px;line-height:1.6;color:#cad5c7}.legal-notice strong{font-size:9px;font-weight:600}.legal-notice a{color:#d8eba8;text-underline-offset:3px}
 body:not(.playing) .mining-info{display:none}
+
+#tool{display:block;width:100%;margin-top:7px;font-size:11px;padding:9px}

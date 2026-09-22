@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "Aiming at the sky cannot place TNT",
+    "TNT tool places a charge on an aimed nearby surface",
+    "Fuse pauses while the menu is open",
+    "A second click cannot detonate or replace the armed charge",
+    "Fuse applies one larger atomic blast within the page budget",
+    "TNT crater persists across reload",
+    "Reload does not re-arm or replay the exploded TNT",
+    "TNT placement and explosion have no WebGPU or browser errors"
+  ],
+  "errors": [],
+  "meta": [
+    216,
+    0,
+    1635394,
+    1
+  ]
+}

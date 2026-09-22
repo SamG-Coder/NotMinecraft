@@ -141,6 +141,9 @@ __device__ int solidTree(float x,float y,float z,unsigned int seed,const unsigne
     }
     return 0;
 }
+__device__ int tntBodyBlocked(float x,float eye,float z,const float* state) {
+    return state[22]>0.0f && fabsf(x-state[23])<0.46f && fabsf(z-state[25])<0.46f && eye>state[24]-0.16f && eye-1.75f<state[24]+0.16f;
+}
 // State: xyz, yaw, pitch, vertical velocity, flying, initialized,
 // cache origin xz, cache dirty, grounded, distance travelled.
 __global__ void simulate(float* state,const unsigned int* damageMap,const int* damageKeys,const unsigned int* damageMask, float dt, float forward, float strafe,
@@ -163,7 +166,7 @@ __global__ void simulate(float* state,const unsigned int* damageMap,const int* d
     float newGround=ground(state[0]+dx,state[2]+dz,seed);
     if(damaged!=0){oldGround=supportedFloor(state[0],state[2],state[1]-1.75f,seed,damageMap,damageKeys,damageMask);newGround=supportedFloor(state[0]+dx,state[2]+dz,state[1]-1.75f,seed,damageMap,damageKeys,damageMask);}
     int bodyBlocked=0;if(damaged!=0)bodyBlocked=terrainBodyBlocked(state[0]+dx,state[1],state[2]+dz,seed,damageMap,damageKeys,damageMask);
-    if((state[6]>0.5f || newGround-oldGround<0.55f) && bodyBlocked==0 && solidTree(state[0]+dx,state[1],state[2]+dz,seed,damageMap,damageKeys,damageMask,damaged)==0) {state[0]+=dx;state[2]+=dz;state[12]+=sqrtf(dx*dx+dz*dz);}
+    if((state[6]>0.5f || newGround-oldGround<0.55f) && bodyBlocked==0 && tntBodyBlocked(state[0]+dx,state[1],state[2]+dz,state)==0 && solidTree(state[0]+dx,state[1],state[2]+dz,seed,damageMap,damageKeys,damageMask,damaged)==0) {state[0]+=dx;state[2]+=dz;state[12]+=sqrtf(dx*dx+dz*dz);}
     state[0]=fminf(8192.0f,fmaxf(-8192.0f,state[0]));state[2]=fminf(8192.0f,fmaxf(-8192.0f,state[2]));
     float baseHeight=ground(state[0],state[2],seed);float support=baseHeight;if(damaged!=0)support=supportedFloor(state[0],state[2],state[1]-1.75f,seed,damageMap,damageKeys,damageMask);
     // Water support belongs only to natural water columns. Excavating dry land
@@ -171,11 +174,11 @@ __global__ void simulate(float* state,const unsigned int* damageMap,const int* d
     if(baseHeight<15.2f)support=fmaxf(support,15.2f);
     float floorY=support+1.75f;
     state[11]=0.0f;
-    if(state[6]>0.5f) {float nextY=fmaxf(floorY,state[1]+rise*speed*dt);if(solidTree(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask,damaged)==0 && (damaged==0 || terrainBodyBlocked(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask)==0))state[1]=nextY;}
+    if(state[6]>0.5f) {float nextY=fmaxf(floorY,state[1]+rise*speed*dt);if(tntBodyBlocked(state[0],nextY,state[2],state)==0 && solidTree(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask,damaged)==0 && (damaged==0 || terrainBodyBlocked(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask)==0))state[1]=nextY;}
     else {
         if(state[1]<=floorY+0.015f) {state[1]=floorY;state[5]=0.0f;state[11]=1.0f;if(rise>0.0f)state[5]=6.2f;}
         state[5]-=18.0f*dt;float nextY=fmaxf(floorY,state[1]+state[5]*dt);
-        if(solidTree(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask,damaged)==0 && (damaged==0 || terrainBodyBlocked(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask)==0))state[1]=nextY;else state[5]=0.0f;
+        if(tntBodyBlocked(state[0],nextY,state[2],state)==0 && solidTree(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask,damaged)==0 && (damaged==0 || terrainBodyBlocked(state[0],nextY,state[2],seed,damageMap,damageKeys,damageMask)==0))state[1]=nextY;else state[5]=0.0f;
     }
     float ox=floorf(state[0]/64.0f)*64.0f-224.0f;
     float oz=floorf(state[2]/64.0f)*64.0f-224.0f;
@@ -321,6 +324,12 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
         if(cx>=0&&cx<256&&cz>=0&&cz<256){int i=cz*257+cx;float4 h=make_float4(heights[i],heights[i+1],heights[i+257],heights[i+258]);
             if(bilinear(h,wx*0.5f-float(cx),wz*0.5f-float(cz))<15.2f){hit=water;material=6;shade=1.0f;}}
     }
+    // One armed 32 cm charge; the red casing and fuse pulse are CUDA-rendered.
+    if(state[22]>0.0f){
+        float3 center=make_float3(state[23]-state[8],state[24],state[25]-state[9]);
+        float th=boxHit(o,inv,make_float3(center.x-0.16f,center.y-0.16f,center.z-0.16f),make_float3(center.x+0.16f,center.y+0.16f,center.z+0.16f));
+        if(th<hit){hit=th;material=11;treeShade=0.85f;}
+    }
     if(material!=0 && hit<viewDistance) {
         float wx=state[8]+o.x+d.x*hit;float wy=o.y+d.y*hit;float wz=state[9]+o.z+d.z*hit;
         if(material==3 || material==4 || material>=8)shade=treeShade;
@@ -340,6 +349,7 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
             if(material==8){cr=0.8f;cg=0.79f;cb=0.69f;float scar=randomAt(int(floorf(wx*4.0f))+int(floorf(wy*16.0f))*17,int(floorf(wz*4.0f)),seed+821u);grain=scar>0.78f?0.3f:0.96f;}
         }
         if(material==5){cr=0.49f;cg=0.5f;cb=0.46f;}
+        if(material==11){cr=0.8f;cg=0.12f;cb=0.065f;grain=1.0f;if(fabsf(wy-state[24])<0.045f){cr=0.94f;cg=0.88f;cb=0.68f;}if(sinf(state[22]*22.0f)>0.7f){cr=1.0f;cg=0.8f;cb=0.5f;}}
         if(material==7){cr=0.43f;cg=0.29f;cb=0.17f;}
         if(material==6){cr=0.14f;cg=0.43f;cb=0.49f;grain=1.0f;}
         float fog=1.0f-expf(-hit*hit*0.000055f);
@@ -388,7 +398,13 @@ __device__ void reserveMining(int vx,int vy,int vz,int radius,int power,unsigned
 }
 __global__ void prepareMining(float* state,const float* heights,unsigned int* damageMap,int* damageKeys,const unsigned int* damageMask,unsigned int* damageMeta,int* mining,float dt,int pressed,unsigned int seed) {
     if(threadIdx.x!=0||blockIdx.x!=0)return;mining[0]=0;state[17]=float(damageMeta[0]);
-    state[16]-=dt;if(pressed==0){state[16]=fmaxf(0.0f,state[16]);return;}if(state[16]>0.0f)return;
+    // State 22: remaining fuse; 23..25: center; 28: completed blasts; 29: placement result.
+    if(state[22]>0.0f){
+        state[22]=fmaxf(0.0f,state[22]-dt);
+        if(state[22]==0.0f){reserveMining(int(roundf(state[23]*100.0f)),int(roundf(state[24]*100.0f)),int(roundf(state[25]*100.0f)),80,768,damageMap,damageKeys,damageMeta,mining);state[17]=float(damageMeta[0]);if(mining[0]!=0)state[28]+=1.0f;return;}
+    }
+    if(pressed==2){state[29]=0.0f;if(state[22]>0.0f){state[29]=2.0f;return;}}
+    state[16]-=dt;if(pressed==0){state[16]=fmaxf(0.0f,state[16]);return;}if(state[16]>0.0f && pressed!=2)return;
     state[16]+=0.1f;state[18]=0.0f;
     int ox=int(floorf(state[0]*100.0f));int oy=int(floorf(state[1]*100.0f));int oz=int(floorf(state[2]*100.0f));
     float3 o=make_float3(state[0]*100.0f-float(ox),state[1]*100.0f-float(oy),state[2]*100.0f-float(oz));
@@ -399,6 +415,21 @@ __global__ void prepareMining(float* state,const float* heights,unsigned int* da
         if(t>600.0f)break;
         int x=int(floorf(o.x+d.x*t));int y=int(floorf(o.y+d.y*t));int z=int(floorf(o.z+d.z*t));
         if(pickSolid(ox+x,oy+y,oz+z,heights,state,seed,damageMap,damageKeys,damageMask)!=0){
+            if(pressed==2){
+                // Search a short distance back from the aimed surface for a clear casing.
+                for(int attempt=0;attempt<12;attempt++){
+                    float back=28.0f+float(attempt)*4.0f;if(t<back)return;
+                    float cx=floorf((float(ox)+o.x+d.x*(t-back)))*0.01f;
+                    float cy=floorf((float(oy)+o.y+d.y*(t-back)))*0.01f;
+                    float cz=floorf((float(oz)+o.z+d.z*(t-back)))*0.01f;
+                    int blocked=0;
+                    if(fabsf(cx-state[0])<0.47f && fabsf(cz-state[2])<0.47f && cy+0.16f>state[1]-1.75f && cy-0.16f<state[1])blocked=1;
+                    for(int iz=-1;iz<=1;iz++)for(int iy=-1;iy<=1;iy++)for(int ix=-1;ix<=1;ix++)
+                        if(pickSolid(int(floorf((cx+float(ix)*0.16f)*100.0f)),int(floorf((cy+float(iy)*0.16f)*100.0f)),int(floorf((cz+float(iz)*0.16f)*100.0f)),heights,state,seed,damageMap,damageKeys,damageMask)!=0)blocked=1;
+                    if(blocked==0){state[22]=3.0f;state[23]=cx;state[24]=cy;state[25]=cz;state[29]=1.0f;return;}
+                }
+                return;
+            }
             reserveMining(ox+x,oy+y,oz+z,12,96,damageMap,damageKeys,damageMeta,mining);
             state[17]=float(damageMeta[0]);state[18]=1.0f;state[19]=float(ox+x)*0.01f;state[20]=float(oy+y)*0.01f;state[21]=float(oz+z)*0.01f;return;}
         float nx=(float(x+(d.x>0.0f?1:0))-o.x)/d.x;
@@ -408,16 +439,19 @@ __global__ void prepareMining(float* state,const float* heights,unsigned int* da
     }
 }
 __global__ void accumulateMining(const int* mining,const int* damageKeys,unsigned int* damageStress) {
-    int lane=int(blockIdx.x*blockDim.x+threadIdx.x);if(mining[0]==0||lane>=mining[6]*512)return;
+    if(mining[0]==0)return;
+    for(int lane=int(blockIdx.x*blockDim.x+threadIdx.x);lane<mining[6]*512;lane+=int(gridDim.x*blockDim.x)){
     int page=mining[8+lane/512];int cell=lane%512;
     int x=damageKeys[page*4]*32+(cell%8)*4+2-mining[1];
     int y=damageKeys[page*4+1]*32+((cell/8)%8)*4+2-mining[2];
     int z=damageKeys[page*4+2]*32+(cell/64)*4+2-mining[3];
-    int r2=mining[4]*mining[4];int d2=x*x+y*y+z*z;if(d2>=r2)return;
+    int r2=mining[4]*mining[4];int d2=x*x+y*y+z*z;if(d2>=r2)continue;
     unsigned int amount=(unsigned int)((r2-d2)*mining[5]/r2);if(amount!=0u)addDamage(damageStress,page*512+cell,amount);
+    }
 }
 __global__ void resolveMining(const int* mining,const int* damageKeys,const unsigned int* damageStress,unsigned int* damageMask,unsigned int* damageMeta,unsigned int seed) {
-    int lane=int(blockIdx.x*blockDim.x+threadIdx.x);if(mining[0]==0||lane>=mining[6]*1024)return;
+    if(mining[0]==0)return;
+    for(int lane=int(blockIdx.x*blockDim.x+threadIdx.x);lane<mining[6]*1024;lane+=int(gridDim.x*blockDim.x)){
     int page=mining[8+lane/1024];int word=lane%1024;int y=word%32;int z=word/32;
     unsigned int bits=damageMask[page*1024+word];unsigned int next=bits;
     for(int x=0;x<32;x++) {
@@ -426,6 +460,7 @@ __global__ void resolveMining(const int* mining,const int* damageKeys,const unsi
     }
     damageMask[page*1024+word]=next;
     if(next!=bits)atomicAdd(&damageMeta[2],(unsigned int)__popc(next^bits));
+    }
 }
 // Deterministic event injection for replay and correctness tests. Events are
 // integer voxel positions and must be applied exactly once by the caller.

@@ -51,6 +51,18 @@ Mining uses a roughly 24 cm diameter tool footprint, with individual 1 cm voxels
 
 Edits survive movement, terrain-cache regeneration and same-seed teleports. They autosave to this browser's IndexedDB after 1.2 seconds without mining, or when opening the menu. Wait for **MINING SAVED LOCALLY** before closing the tab. Returning to a seed or reloading restores its damage. Saves are local to the browser profile and exact origin: `localhost` and `127.0.0.1`, different ports, and other browsers do not share them. The URL contains the seed/start location, not the mining save. A session-memory fallback preserves edits across seed switches if persistent storage fails; the HUD reports that fallback.
 
+## TNT
+
+Open the menu with **Esc**, choose **TNT** in the tool selector, then resume and **click the left mouse button** while aiming at a nearby surface. Select **Mine** to return to normal mining.
+
+- Placement reaches 6 m and checks for a clear 32 cm casing near the aimed surface, outside the player's body. Sky clicks do nothing.
+- One charge can be armed at a time. Its red casing flashes during a **3-second fuse**, which pauses in the menu.
+- The blast applies an **80 cm radius** damage field with seeded fracture edges. It uses the same saturating atomic counters and centimetre removal bits as mining. Trunks, foliage and terrain can all be removed.
+- Craters autosave with the world's mining data. Wait for **MINING SAVED LOCALLY** before closing. Armed charges are transient: changing seeds or reloading clears them; completed craters remain.
+- A blast preflights the existing 4096-page pool and rejects the event in full if there is insufficient capacity. No old edits are evicted. Charges stay where placed; there is no falling TNT, chain reaction, player damage or debris simulation in this version.
+
+Placement, fuse timing, casing rendering, collision and explosion logic are all in `kernels/world.cu`. The host only supplies the selected input and transports save data. The mining command buffer is 2 KiB to fit up to 343 blast pages. Existing workgroup counts are reused with strided loops over larger events.
+
 ## Representation and performance
 
 - **100× smaller on each edge.** A block is `0.01 × 0.01 × 0.01 m`: one millionth of a cubic metre. Player eye height is 1.75 m and walking speed is 4.3 m/s.
@@ -60,18 +72,18 @@ Edits survive movement, terrain-cache regeneration and same-seed teleports. They
 - **Empty-space skipping.** Rays traverse 2 m macro cells, use local height/slope bounds to skip air, then traverse centimetre cells near a surface. Tree volumes use analytic box intersections. No CPU-generated voxel meshes, per-block draw calls, or giant dense voxel buffers.
 - **Exact detail is the default.** The optional faster mode uses 4 cm terrain detail beyond 24 m and 16 cm beyond 64 m in pristine worlds. Once edits exist, rendering stays at 1 cm so distant detail changes cannot fill holes back in. Subpixel material and face-lighting detail is filtered to suppress grid moiré; geometry remains unchanged.
 - **GPU-resident simulation and pixels.** Six kernels run in order: `simulate`, `generate`, `prepareMining`, `accumulateMining`, `resolveMining`, `render`. `replayMining` is a seventh entry for integer event replay and tests. All seven are in `world.cu`. The CUDA output buffer is copied directly into the browser canvas texture. There is no handwritten WGSL game shader or JavaScript scene renderer.
-- **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 68 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
+- **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 136 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
 - **Accumulated atomic damage.** Only edited 32 cm pages have logical damage state: 512 saturating integer counters on a 4 cm lattice, plus one removal bit for each of 32,768 centimetre voxels. World seed and voxel position determine immutable fracture thresholds. Same accepted integer events give the same final spatial state independent of processing order. See the [destruction design](docs/destruction.md).
 - **Bounded damage memory.** The GPU reserves a 4096-page pool: 24 MiB for counters/masks plus about 96 KiB for keys and lookup. Saved data includes only allocated page prefixes plus the lookup table. Capacity exhaustion rejects a new stroke in full and reports it, preserving existing edits. The current version does not evict or stream damage pages out of that pool.
 - **Uncapped frame scheduling.** No fixed FPS limit or timer delay is applied. Frames follow browser animation callbacks and GPU availability; simulation uses elapsed time.
 - **Seeded forest variety.** Oak and birch trees have branching trunks and layered crown clusters; pines have ten tapered foliage tiers. Seeded placement, height, species, centimetre-quantized bounds, bark patterns and foliage shading live in `kernels/world.cu`. Rendering, picking and collision use the same tree bounds. Rays evaluate a tree once per 8 m site.
 - **Bounded GPU queue.** At most one gameplay frame is queued. The canvas width is aligned for a single buffer-to-texture transfer; resolution is capped at 2560 × 1440.
 
-Walking includes gravity, jumping, mined-terrain support and damage-aware tree collision. Collision remains a body-probe approximation, not an exhaustive capsule-to-voxel solver. Natural water areas still have a solid walkable surface at 15.2 m; excavations under dry land can extend below sea level without an invisible water floor. Floating tree remnants do not collapse. Placement, inventory, item drops, crafting, mobs, natural caves, swimming and multiplayer are not implemented.
+Walking includes gravity, jumping, mined-terrain support and damage-aware tree collision. Collision remains a body-probe approximation, not an exhaustive capsule-to-voxel solver. Natural water areas still have a solid walkable surface at 15.2 m; excavations under dry land can extend below sea level without an invisible water floor. Floating tree remnants do not collapse. General block placement, inventory, item drops, crafting, mobs, natural caves, swimming and multiplayer are not implemented.
 
 ## Mining performance
 
-The updated forest and mining build was measured on the **RTX 5080** in Edge headless WebGPU at **1920 × 1080**, exact 1 cm detail and 160 m view distance. These GPU timestamps include all six frame kernels. They exclude texture presentation/copy, host work, and local save pauses. Five warm-ups and 30 measured samples per case:
+The forest and mining build before TNT was measured on the **RTX 5080** in Edge headless WebGPU at **1920 × 1080**, exact 1 cm detail and 160 m view distance. These GPU timestamps include all six frame kernels. They exclude texture presentation/copy, host work, and local save pauses. Five warm-ups and 30 measured samples per case:
 
 | Scene | Median GPU ms | p95 GPU ms |
 | --- | ---: | ---: |
@@ -105,6 +117,7 @@ npm run test:ui        # Real browser input, pointer lock, settings, screenshots
 npm run test:native    # Optional: compile and execute the same .cu with NVCC
 npm test               # Also compares against the native files, if generated
 npm run test:mining    # Atomic state, fracture, collision and mining benchmarks
+node scripts/tnt-ui-test.mjs # Placement, fuse, explosion and crater persistence
 npm run test:mining-ui # Real mining input, cache travel, per-seed save and reload
 ```
 
