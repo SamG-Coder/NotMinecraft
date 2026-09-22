@@ -13,6 +13,19 @@
     "Player falls into a sufficiently wide mined hole instead of standing on the original heightfield",
     "Mined-hole collision finds surviving floor beneath the player",
     "Dry-land excavations below sea level have no invisible water floor",
+    "Independent seed lookup finds oak, birch and pine test sites",
+    "Pine trunk is picked at its visible volume",
+    "Pine trunk mining exposes a deeper surface",
+    "Pine crown is picked at its visible volume",
+    "Pine crown mining exposes a deeper surface",
+    "Oak trunk is picked at its visible volume",
+    "Oak trunk mining exposes a deeper surface",
+    "Oak crown is picked at its visible volume",
+    "Oak crown mining exposes a deeper surface",
+    "Birch trunk is picked at its visible volume",
+    "Birch trunk mining exposes a deeper surface",
+    "Birch crown is picked at its visible volume",
+    "Birch crown mining exposes a deeper surface",
     "Active-mining benchmark performed real strokes and removed voxels",
     "No WebGPU validation errors"
   ],
@@ -23,8 +36,8 @@
       "height": 1080,
       "exact": true,
       "samples": 30,
-      "medianMs": 0.412544,
-      "p95Ms": 0.477024
+      "medianMs": 0.52912,
+      "p95Ms": 0.549696
     },
     {
       "scene": "ground view, active mining every frame",
@@ -32,8 +45,8 @@
       "height": 1080,
       "exact": true,
       "samples": 30,
-      "medianMs": 0.937664,
-      "p95Ms": 1.459168
+      "medianMs": 1.157568,
+      "p95Ms": 1.4456
     },
     {
       "scene": "horizon view after mining",
@@ -41,8 +54,8 @@
       "height": 1080,
       "exact": true,
       "samples": 30,
-      "medianMs": 2.34544,
-      "p95Ms": 2.71056
+      "medianMs": 2.260416,
+      "p95Ms": 2.280992
     }
   ],
   "errors": [],

@@ -70,6 +70,30 @@ __device__ float ground(float x,float z,unsigned int seed) {
     float c=elevation(gx,gz+2.0f,seed); float d=elevation(gx+2.0f,gz+2.0f,seed);
     return floorf(((a+(b-a)*u)*(1.0f-v)+(c+(d-c)*u)*v)*100.0f)*0.01f;
 }
+// Each crown stays within its 8 m site, including the player's collision radius.
+// Shared bounds make the visible wood/leaves exactly the volumes mining picks.
+__device__ float4 treeSite(int tx,int tz,unsigned int seed) {
+    float height=0.0f;int species=int(randomAt(tx,tz,seed+709u)*2.999f);
+    if(randomAt(tx,tz,seed+701u)>0.52f)height=3.6f+randomAt(tx,tz,seed+719u)*1.8f+(species==1?1.0f:0.0f);
+    return make_float4(float(tx)*8.0f+4.0f+floorf((randomAt(tx,tz,seed+727u)-0.5f)*140.0f)*0.01f,
+        float(tz)*8.0f+4.0f+floorf((randomAt(tx,tz,seed+733u)-0.5f)*140.0f)*0.01f,height,float(species));
+}
+__device__ void treeBounds(float4 tree,int species,int part,float3& lo,float3& hi) {
+    float x=0.0f;float z=0.0f;float y=tree.w;float rx=0.22f;float rz=rx;float ry=0.22f;
+    if(part==0){rx=species==1?0.16f:0.24f;rz=rx;y=tree.w*0.5f-0.2f;ry=tree.w*0.5f+0.6f;}
+    if(part==1){x=0.42f;y=tree.w-0.65f;rx=0.68f;rz=0.13f;ry=0.14f;}
+    if(part==2){z=-0.4f;y=tree.w-0.3f;rx=0.13f;rz=0.62f;ry=0.13f;}
+    if(part>=3){
+        if(species==2){float layer=float(part-3);y=tree.w-1.65f+layer*0.42f;rx=1.9f-layer*0.18f;rz=rx;ry=0.32f;}
+        else {
+            float scale=species==1?0.72f:1.0f;rx=1.18f*scale;rz=1.14f*scale;ry=species==1?1.02f:0.85f;
+            if(part>=4 && part<=11){int l=part-4;x=((l%2)==0?-0.92f:0.92f)*scale;z=((l/2)%2==0?-0.86f:0.86f)*scale;y+=l<4?-0.4f:0.65f;rx=(0.88f+float(l%3)*0.1f)*scale;rz=(0.91f+float((l+1)%3)*0.07f)*scale;ry=0.7f+float(l%2)*0.17f;}
+            if(part==12){x=0.12f;z=-0.18f;y+=1.4f;rx=0.85f*scale;rz=0.82f*scale;ry=0.5f;}
+        }
+    }
+    lo=make_float3(floorf((tree.x+x-rx)*100.0f)*0.01f,floorf((tree.y+y-ry)*100.0f)*0.01f,floorf((tree.z+z-rz)*100.0f)*0.01f);
+    hi=make_float3(floorf((tree.x+x+rx)*100.0f)*0.01f,floorf((tree.y+y+ry)*100.0f)*0.01f,floorf((tree.z+z+rz)*100.0f)*0.01f);
+}
 __device__ float minedFloor(float x,float z,float feet,unsigned int seed,const unsigned int* damageMap,const int* damageKeys,const unsigned int* damageMask) {
     float h=ground(x,z,seed);int vx=int(floorf(x*100.0f));int vz=int(floorf(z*100.0f));
     int top=int(floorf(fminf(h,feet+0.5f)*100.0f));
@@ -106,22 +130,14 @@ __device__ int remainingTreeBox(float x,float eye,float z,float3 lo,float3 hi,co
     return 0;
 }
 __device__ int solidTree(float x,float y,float z,unsigned int seed,const unsigned int* damageMap,const int* damageKeys,const unsigned int* damageMask,int damaged) {
-    // Player is a 0.6 m wide, 1.75 m tall capsule approximation.
-    // Inspect neighbouring cells too when the body crosses a tile boundary.
-    int cx=int(floorf(x*0.5f));int cz=int(floorf(z*0.5f));
-    for(int dz=-1;dz<=1;dz++)for(int dx=-1;dx<=1;dx++) {
-        float gx=float(cx+dx)*2.0f;float gz=float(cz+dz)*2.0f;
-        float tree=randomAt(cx+dx,cz+dz,seed+701u);
-        if(tree>0.965f) {
-            float base=(elevation(gx,gz,seed)+elevation(gx+2.0f,gz,seed)+elevation(gx,gz+2.0f,seed)+elevation(gx+2.0f,gz+2.0f,seed))*0.25f;
-            if(base>17.0f && base<33.0f) {
-                base=floorf(base*100.0f)*0.01f;
-                float th=floorf((3.2f+tree*1.5f)*100.0f)*0.01f;
-                if(x>gx+0.57f && x<gx+1.43f && z>gz+0.57f && z<gz+1.43f && y>base-0.8f && y-1.75f<base+th-1.0f){if(damaged==0 || remainingTreeBox(x,y,z,make_float3(gx+0.87f,base-0.8f,gz+0.87f),make_float3(gx+1.13f,base+th-1.0f,gz+1.13f),damageMap,damageKeys,damageMask)!=0)return 1;}
-                if(x>gx-0.18f && x<gx+2.18f && z>gz-0.18f && z<gz+2.18f && y>base+th-1.8f && y-1.75f<base+th){if(damaged==0 || remainingTreeBox(x,y,z,make_float3(gx+0.12f,base+th-1.8f,gz+0.12f),make_float3(gx+1.88f,base+th,gz+1.88f),damageMap,damageKeys,damageMask)!=0)return 1;}
-                if(x>gx+0.12f && x<gx+1.88f && z>gz+0.12f && z<gz+1.88f && y>base+th && y-1.75f<base+th+0.6f){if(damaged==0 || remainingTreeBox(x,y,z,make_float3(gx+0.42f,base+th,gz+0.42f),make_float3(gx+1.58f,base+th+0.6f,gz+1.58f),damageMap,damageKeys,damageMask)!=0)return 1;}
-            }
-        }
+    float4 site=treeSite(int(floorf(x/8.0f)),int(floorf(z/8.0f)),seed);
+    if(site.z==0.0f || fabsf(x-site.x)>2.6f || fabsf(z-site.y)>2.6f)return 0;
+    float base=ground(site.x,site.y,seed);if(base<=17.0f || base>=34.0f)return 0;
+    float4 tree=make_float4(site.x,base,site.y,site.z);
+    for(int part=0;part<13;part++){
+        float3 lo;float3 hi;treeBounds(tree,int(site.w),part,lo,hi);
+        if(x+0.3f>lo.x && x-0.3f<hi.x && z+0.3f>lo.z && z-0.3f<hi.z && y>lo.y && y-1.75f<hi.y)
+            if(damaged==0 || remainingTreeBox(x,y,z,lo,hi,damageMap,damageKeys,damageMask)!=0)return 1;
     }
     return 0;
 }
@@ -176,6 +192,14 @@ __global__ void generate(float* heights,const float* state,unsigned int seed) {
 __device__ float bilinear(float4 h,float u,float v) {
     return (h.x+(h.y-h.x)*u)*(1.0f-v)+(h.z+(h.w-h.z)*u)*v;
 }
+// Return a tree in cache-local coordinates. Site IDs stay in world space.
+__device__ float4 cachedTree(float4 site,const float* heights,const float* state) {
+    float x=site.x-state[8];float z=site.y-state[9];int cx=int(floorf(x*0.5f));int cz=int(floorf(z*0.5f));
+    if(site.z==0.0f || cx<0 || cz<0 || cx>=256 || cz>=256)return make_float4(0.0f,0.0f,0.0f,0.0f);
+    int i=cz*257+cx;float4 h=make_float4(heights[i],heights[i+1],heights[i+257],heights[i+258]);
+    float base=floorf(bilinear(h,x*0.5f-float(cx),z*0.5f-float(cz))*100.0f)*0.01f;
+    return make_float4(x,base,z,(base>17.0f && base<34.0f)?site.z:0.0f);
+}
 // Axis aligned box hit, used for the solid voxel tree volumes.
 __device__ float boxHit(float3 o,float3 inv,float3 lo,float3 hi) {
     float ax=(lo.x-o.x)*inv.x;float bx=(hi.x-o.x)*inv.x;
@@ -220,7 +244,7 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
     float sky=fmaxf(0.0f,d.y);float r=0.62f-0.32f*sky;float g=0.79f-0.27f*sky;float b=0.87f-0.14f*sky;
     float sun=fmaxf(0.0f,d.x*0.44f+d.y*0.79f+d.z*0.43f);
     float glow=powf(sun,320.0f);r+=glow*0.8f;g+=glow*0.65f;b+=glow*0.36f;
-    float t=0.02f;float hit=10000.0f;int material=0;float shade=1.0f;float smoothShade=1.0f;
+    float t=0.02f;float hit=10000.0f;int material=0;float shade=1.0f;float smoothShade=1.0f;float treeShade=1.0f;int lastTreeX=-99999;int lastTreeZ=-99999;
     for(int cell=0;cell<360;cell++) {
         if(t>viewDistance || t>=hit)break;
         float x=o.x+d.x*t;float z=o.z+d.z*t;
@@ -232,18 +256,23 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
         float end=fminf(tx,tz)+0.00015f;
         int i=cz*257+cx;float4 h=make_float4(heights[i],heights[i+1],heights[i+257],heights[i+258]);
         float top=fmaxf(fmaxf(h.x,h.y),fmaxf(h.z,h.w));
-        float base=bilinear(h,0.5f,0.5f);
-        // Trees fit inside one macro tile, so no neighbouring-cell dependency.
-        float tree=randomAt(cx+int(state[8]*0.5f),cz+int(state[9]*0.5f),seed+701u);
-        if(tree>0.965f && base>17.0f && base<33.0f) {
-            base=floorf(base*100.0f)*0.01f;
-            float th=floorf((3.2f+tree*1.5f)*100.0f)*0.01f;
-            float leaf=minedBoxHit(o,d,inv,make_float3(gx+0.12f,base+th-1.8f,gz+0.12f),make_float3(gx+1.88f,base+th,gz+1.88f),state,damageMap,damageKeys,damageMask);
-            float crown=minedBoxHit(o,d,inv,make_float3(gx+0.42f,base+th,gz+0.42f),make_float3(gx+1.58f,base+th+0.6f,gz+1.58f),state,damageMap,damageKeys,damageMask);
-            float trunk=minedBoxHit(o,d,inv,make_float3(gx+0.87f,base-0.8f,gz+0.87f),make_float3(gx+1.13f,base+th-1.0f,gz+1.13f),state,damageMap,damageKeys,damageMask);
-            float treeHit=fminf(leaf,crown);
-            if(treeHit<hit && treeHit>=t-0.001f){hit=treeHit;material=3;shade=0.82f;}
-            if(trunk<hit && trunk>=t-0.001f){hit=trunk;material=4;shade=0.8f;}
+        // Only test each larger tree tile once as the ray traverses 2 m terrain cells.
+        int treeX=int(floorf((x+state[8])/8.0f));int treeZ=int(floorf((z+state[9])/8.0f));
+        if(treeX!=lastTreeX || treeZ!=lastTreeZ){
+            lastTreeX=treeX;lastTreeZ=treeZ;
+            float4 site=treeSite(treeX,treeZ,seed);float4 tree=cachedTree(site,heights,state);
+            if(tree.w>0.0f){
+                for(int part=0;part<13;part++){
+                    float3 lo;float3 hi;treeBounds(tree,int(site.w),part,lo,hi);
+                    float th=minedBoxHit(o,d,inv,lo,hi,state,damageMap,damageKeys,damageMask);
+                    if(th<hit && th>=t-0.001f){
+                        hit=th;material=part<3?(site.w==1.0f?8:4):(site.w==1.0f?10:(site.w==2.0f?9:3));
+                        float hx=o.x+d.x*th;float hy=o.y+d.y*th;
+                        shade=0.76f;if(fabsf(hx-lo.x)<0.002f || fabsf(hx-hi.x)<0.002f)shade=0.65f;
+                        if(fabsf(hy-hi.y)<0.002f)shade=1.0f;if(fabsf(hy-lo.y)<0.002f)shade=0.48f;treeShade=shade;
+                    }
+                }
+            }
         }
         float start=t;
         if(d.y<0.0f)start=fmaxf(start,(top+0.01f-o.y)*inv.y);
@@ -294,6 +323,7 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
     }
     if(material!=0 && hit<viewDistance) {
         float wx=state[8]+o.x+d.x*hit;float wy=o.y+d.y*hit;float wz=state[9]+o.z+d.z*hit;
+        if(material==3 || material==4 || material>=8)shade=treeShade;
         float grain=0.91f+0.13f*randomAt(int(floorf(wx*100.0f))+int(floorf(wy*100.0f))*31,int(floorf(wz*100.0f)),seed);
         // Filter subpixel material and face-lighting detail without enlarging
         // any geometry. This removes centimetre-grid moire at distance.
@@ -303,8 +333,12 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
         if(material==1 || material==2 || material==5)shade=shade*(1.0f-filter)+smoothShade*filter;
         float cr=0.31f;float cg=0.51f;float cb=0.16f;
         if(material==2){cr=0.72f;cg=0.67f;cb=0.45f;}
-        if(material==3){cr=0.18f;cg=0.38f;cb=0.095f;float leafFilter=fminf(1.0f,footprint*4.0f);grain=(0.82f+0.22f*randomAt(int(floorf(wx*10.0f))+int(floorf(wy*10.0f))*13,int(floorf(wz*10.0f)),seed))*(1.0f-leafFilter)+0.93f*leafFilter;}
-        if(material==4){cr=0.34f;cg=0.23f;cb=0.13f;}
+        if(material==3 || material==9 || material==10){cr=0.18f;cg=0.38f;cb=0.095f;if(material==9){cr=0.12f;cg=0.31f;cb=0.19f;}if(material==10){cr=0.36f;cg=0.5f;cb=0.13f;}float leafFilter=fminf(1.0f,footprint*4.0f);grain=(0.82f+0.22f*randomAt(int(floorf(wx*10.0f))+int(floorf(wy*10.0f))*13,int(floorf(wz*10.0f)),seed))*(1.0f-leafFilter)+0.93f*leafFilter;}
+        if(material==4 || material==8){cr=0.34f;cg=0.23f;cb=0.13f;
+            float bark=randomAt(int(floorf(wx*25.0f))+int(floorf(wy*2.0f))*17,int(floorf(wz*25.0f)),seed+811u);
+            grain*=0.72f+0.36f*bark;
+            if(material==8){cr=0.8f;cg=0.79f;cb=0.69f;float scar=randomAt(int(floorf(wx*4.0f))+int(floorf(wy*16.0f))*17,int(floorf(wz*4.0f)),seed+821u);grain=scar>0.78f?0.3f:0.96f;}
+        }
         if(material==5){cr=0.49f;cg=0.5f;cb=0.46f;}
         if(material==7){cr=0.43f;cg=0.29f;cb=0.17f;}
         if(material==6){cr=0.14f;cg=0.43f;cb=0.49f;grain=1.0f;}
@@ -326,12 +360,12 @@ __device__ int pickSolid(int vx,int vy,int vz,const float* heights,const float* 
     float gx=state[8]+float(cx)*2.0f;float gz=state[9]+float(cz)*2.0f;int i=cz*257+cx;
     float4 h=make_float4(heights[i],heights[i+1],heights[i+257],heights[i+258]);
     float surface=floorf(bilinear(h,(x-gx)*0.5f,(z-gz)*0.5f)*100.0f)*0.01f;if(y<surface)return 1;
-    float base=bilinear(h,0.5f,0.5f);float tree=randomAt(int(gx*0.5f),int(gz*0.5f),seed+701u);
-    if(tree<=0.965f || base<=17.0f || base>=33.0f)return 0;
-    base=floorf(base*100.0f)*0.01f;float th=floorf((3.2f+tree*1.5f)*100.0f)*0.01f;
-    if(x>=gx+0.87f&&x<gx+1.13f&&z>=gz+0.87f&&z<gz+1.13f&&y>=base-0.8f&&y<base+th-1.0f)return 1;
-    if(x>=gx+0.12f&&x<gx+1.88f&&z>=gz+0.12f&&z<gz+1.88f&&y>=base+th-1.8f&&y<base+th)return 1;
-    if(x>=gx+0.42f&&x<gx+1.58f&&z>=gz+0.42f&&z<gz+1.58f&&y>=base+th&&y<base+th+0.6f)return 1;
+    float4 site=treeSite(int(floorf(x/8.0f)),int(floorf(z/8.0f)),seed);float4 tree=cachedTree(site,heights,state);
+    if(tree.w==0.0f)return 0;x-=state[8];z-=state[9];
+    for(int part=0;part<13;part++){
+        float3 lo;float3 hi;treeBounds(tree,int(site.w),part,lo,hi);
+        if(x>=lo.x&&x<hi.x&&z>=lo.z&&z<hi.z&&y>=lo.y&&y<hi.y)return 1;
+    }
     return 0;
 }
 __device__ void reserveMining(int vx,int vy,int vz,int radius,int power,unsigned int* damageMap,int* damageKeys,unsigned int* damageMeta,int* mining) {
@@ -400,4 +434,3 @@ __global__ void replayMining(unsigned int* damageMap,int* damageKeys,unsigned in
     if(radius<1||radius>24||power<1||power>65535)return;
     reserveMining(x,y,z,radius,power,damageMap,damageKeys,damageMeta,mining);
 }
-

@@ -63,19 +63,21 @@ Edits survive movement, terrain-cache regeneration and same-seed teleports. They
 - **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 68 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
 - **Accumulated atomic damage.** Only edited 32 cm pages have logical damage state: 512 saturating integer counters on a 4 cm lattice, plus one removal bit for each of 32,768 centimetre voxels. World seed and voxel position determine immutable fracture thresholds. Same accepted integer events give the same final spatial state independent of processing order. See the [destruction design](docs/destruction.md).
 - **Bounded damage memory.** The GPU reserves a 4096-page pool: 24 MiB for counters/masks plus about 96 KiB for keys and lookup. Saved data includes only allocated page prefixes plus the lookup table. Capacity exhaustion rejects a new stroke in full and reports it, preserving existing edits. The current version does not evict or stream damage pages out of that pool.
+- **60 FPS maximum.** The browser host spaces GPU frame submissions by at least 1/60 second, including on high-refresh displays. Simulation uses elapsed time. The cap is a ceiling; browser scheduling or a slower device can produce a lower rate.
+- **Seeded forest variety.** Oak and birch trees have branching trunks and layered crown clusters; pines have ten tapered foliage tiers. Seeded placement, height, species, centimetre-quantized bounds, bark patterns and foliage shading live in `kernels/world.cu`. Rendering, picking and collision use the same tree bounds. Rays evaluate a tree once per 8 m site.
 - **Bounded GPU queue.** At most one gameplay frame is queued. The canvas width is aligned for a single buffer-to-texture transfer; resolution is capped at 2560 × 1440.
 
 Walking includes gravity, jumping, mined-terrain support and damage-aware tree collision. Collision remains a body-probe approximation, not an exhaustive capsule-to-voxel solver. Natural water areas still have a solid walkable surface at 15.2 m; excavations under dry land can extend below sea level without an invisible water floor. Floating tree remnants do not collapse. Placement, inventory, item drops, crafting, mobs, natural caves, swimming and multiplayer are not implemented.
 
 ## Mining performance
 
-The mining build was measured on the **RTX 5080** in Edge headless WebGPU at **1920 × 1080**, exact 1 cm detail and 160 m view distance. These GPU timestamps include all six frame kernels. They exclude texture presentation/copy, host work, and local save pauses. Five warm-ups and 30 measured samples per case:
+The updated forest and mining build was measured on the **RTX 5080** in Edge headless WebGPU at **1920 × 1080**, exact 1 cm detail and 160 m view distance. These GPU timestamps include all six frame kernels. They exclude texture presentation/copy, host work, and local save pauses. Five warm-ups and 30 measured samples per case:
 
 | Scene | Median GPU ms | p95 GPU ms |
 | --- | ---: | ---: |
-| Looking at unmodified ground | 0.413 | 0.477 |
-| Same ground view, a real mining stroke every frame | 0.938 | 1.459 |
-| Looking toward the horizon after mining | 2.345 | 2.711 |
+| Looking at unmodified ground | 0.529 | 0.550 |
+| Same ground view, a real mining stroke every frame | 1.158 | 1.446 |
+| Looking toward the horizon after mining | 2.260 | 2.281 |
 
 The active test produced 35 strokes, 29 edited pages, and 33,699 removal bits (including bits in originally empty space). These are scene-specific GPU timings, not end-to-end FPS claims or worst-case guarantees for a full damage pool. The replay benchmark deliberately mines every measured frame; normal input is limited to approximately 10 strokes per second. Raw results: [`reports/mining-gpu-validation.json`](reports/mining-gpu-validation.json).
 
@@ -95,6 +97,8 @@ This table records the initial exploration build before mining. Timing tails inc
 ## Validation
 
 ```powershell
+npm run build          # Build the Pages site
+node scripts/check-live.mjs # Serve under /NotMinecraft/, exercise GPU and 60 FPS cap
 npm run check          # Compile all seven CUDA entries to WGSL
 npm test               # Hardware GPU correctness and benchmark cases
 npm run test:ui        # Real browser input, pointer lock, settings, screenshots
@@ -108,9 +112,12 @@ Browser tests use the installed Edge; set `TEST_BROWSER=chrome` for the GPU test
 
 **18 GPU checks and 10 browser UI checks passed.** Coverage includes repeatable seeds and frames, changed seeds, overlapping cache contents across positive/negative coordinates, distant rendering, walking, jumping, flight, tree collision, pointer lock, mouse input, Escape, seed/location changes and resizing.
 
-Mining adds **15 GPU checks** and **8 browser mining/persistence checks**. The GPU suite compares 4,096 damage cells and 262,144 voxel decisions with an independent CPU reference, then compares integer counters and masks bit-for-bit with native CUDA. It tests reordered events, simultaneous atomic contention, saturation, monotonic removal, page-capacity handling and falling onto a surviving floor after excavation.
+Mining adds **28 GPU checks** and **8 browser mining/persistence checks**. The GPU suite compares 4,096 damage cells and 262,144 voxel decisions with an independent CPU reference, then compares integer counters and masks bit-for-bit with native CUDA. It also picks and mines trunks and crowns of all three tree species. It tests reordered events, simultaneous atomic contention, saturation, monotonic removal, page-capacity handling and falling onto a surviving floor after excavation.
 
 The native test compiles `tests/native.cu`, which includes the authoritative game source. All 66,049 height samples agree within 0.00005 m. The 320 × 200 exact-mode render has a mean RGB channel difference of 0.000224 / 255 versus native CUDA; one of 192,000 channels differs by more than 8. Same-device WebGPU repeat renders are bit-identical. Cross-backend floating-point rendering is tolerance-checked, not claimed bit-identical.
 
-Generated native binaries, WGSL, screenshots and local reports go under ignored `artifacts/`. The checked-in `reports/` files record this validation run.
+A browser test replaces requestAnimationFrame with 2 ms callbacks and checks actual GPU submission intervals, independently of monitor refresh rate.
 
+Tree generation changed with this forest update. Existing damage remains attached to its seed and coordinates, so old tree edits may not line up with the new trees.
+
+Generated native binaries, WGSL, screenshots and local reports go under ignored `artifacts/`. The checked-in `reports/` files record this validation run.

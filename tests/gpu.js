@@ -40,18 +40,20 @@ async function main(){
  // Locate a tree independently with integer hashing, then walk into its trunk.
  const hash=x=>{x=Math.imul(x^(x>>>16),2146121005);x=Math.imul(x^(x>>>15),2221713035);return (x^(x>>>16))>>>0;};
  let treeCell;
- for(let z=108;z<122&&!treeCell;z++)for(let x=108;x<122;x++){
-   const wx=originA[0]/2+x,wz=originA[1]/2+z;
-   const value=(hash(Math.imul(wx,374761393)^Math.imul(wz,668265263)^(271828+701))&65535)/65535;
-   const base=(a[z*257+x]+a[z*257+x+1]+a[(z+1)*257+x]+a[(z+1)*257+x+1])/4;
-   if(value>.965&&base>17&&base<33){treeCell={x:wx*2,z:wz*2,base};break;}
+ const random=(x,z,s)=>(hash(Math.imul(x,374761393)^Math.imul(z,668265263)^s)&65535)/65535;
+ for(let tz=-3;tz<=3&&!treeCell;tz++)for(let tx=-3;tx<=3;tx++){
+   const wx=tx*8+4+Math.floor((random(tx,tz,271828+727)-.5)*140)*.01;
+   const wz=tz*8+4+Math.floor((random(tx,tz,271828+733)-.5)*140)*.01;
+   const lx=(wx-originA[0])/2,lz=(wz-originA[1])/2,x=Math.floor(lx),z=Math.floor(lz),u=lx-x,v=lz-z;
+   const i=z*257+x,base=Math.floor(((a[i]+(a[i+1]-a[i])*u)*(1-v)+(a[i+257]+(a[i+258]-a[i+257])*u)*v)*100)*.01;
+   if(random(tx,tz,271828+701)>.52&&base>17&&base<34){treeCell={x:wx,z:wz,base};break;}
  }
  check(!!treeCell,'Independent seeded hash locates a test tree');
  await tick({dt:0,reset:1,rise:0,forward:0});const collisionState=await rt.read(state);
- collisionState[0]=treeCell.x+1;collisionState[2]=treeCell.z-0.5;collisionState[1]=treeCell.base+1.75;collisionState[3]=0;collisionState[6]=0;
+ collisionState[0]=treeCell.x;collisionState[2]=treeCell.z-0.8;collisionState[1]=treeCell.base+1.75;collisionState[3]=0;collisionState[6]=0;
  rt.device.queue.writeBuffer(state.gpuBuffer,0,collisionState);
  for(let i=0;i<45;i++)await tick({dt:1/60,forward:1},false);
- const stopped=await rt.read(state);check(stopped[2]<treeCell.z+0.6,'Player body is blocked by a procedurally placed tree trunk');
+ const stopped=await rt.read(state);check(stopped[2]<treeCell.z-0.2,'Player body is blocked by a procedurally placed tree trunk');
  await tick({dt:0,reset:1,rise:0,forward:0});
  const pixels=rt.createBuffer(320*200*4);
  async function picture(exact=1){rt.batch().dispatch(ren.bind({pixels,heights,state,...damage},{width:320,height:200,seed:271828,viewDistance:160,exact}),[40,25,1]).submit();await rt.idle();return rt.read(pixels,Uint32Array);}
@@ -96,4 +98,3 @@ async function main(){
  await rt.idle();check(report.errors.length===0,'No WebGPU validation or device errors');
 }
 main().catch(e=>report.errors.push(String(e.stack||e))).finally(()=>{window.__report=report;document.getElementById('result').textContent=JSON.stringify(report,null,2);});
-

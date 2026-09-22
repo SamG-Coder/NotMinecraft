@@ -68,6 +68,29 @@ async function main(){
  await events(pit,deep);const deepMeta=await rt.read(pit.damageMeta,Uint32Array),deepState=await rt.read(state);deepState[1]=17.0;deepState[5]=0;deepState[17]=deepMeta[0];rt.device.queue.writeBuffer(state.gpuBuffer,0,deepState);
  for(let i=0;i<60;i++){rt.batch().dispatch(sim,[1]).submit();await rt.idle();}
  const belowSea=await rt.read(state);report.belowSeaFeet=belowSea[1]-1.75;check(belowSea[1]-1.75<15.0,'Dry-land excavations below sea level have no invisible water floor');
+ // Independently locate each species and mine both trunk and crown surfaces.
+ const forest=create(),fs=rt.createBuffer(new Float32Array(32)),fh=rt.createBuffer(66049*4);
+ const fi=kernels.simulate.bind({state:fs,...view(forest)},input),fg=kernels.generate.bind({heights:fh,state:fs},{seed:271828});
+ rt.batch().dispatch(fi,[1]).dispatch(fg,[517]).submit();await rt.idle();
+ const forestState=await rt.read(fs),corners=await rt.read(fh),sites=new Map();
+ const random=(x,z,s)=>(mix(Math.imul(x,374761393)^Math.imul(z,668265263)^s)&65535)/65535;
+ for(let tz=-8;tz<=8;tz++)for(let tx=-8;tx<=8;tx++){
+   const species=Math.floor(random(tx,tz,271828+709)*2.999);if(sites.has(species)||random(tx,tz,271828+701)<=.52)continue;
+   const x=tx*8+4+Math.floor((random(tx,tz,271828+727)-.5)*140)*.01,z=tz*8+4+Math.floor((random(tx,tz,271828+733)-.5)*140)*.01;
+   const u=(x-forestState[8])/2,v=(z-forestState[9])/2,ix=Math.floor(u),iz=Math.floor(v),fx=u-ix,fz=v-iz,i=iz*257+ix;
+   const base=Math.floor(((corners[i]+(corners[i+1]-corners[i])*fx)*(1-fz)+(corners[i+257]+(corners[i+258]-corners[i+257])*fx)*fz)*100)*.01;
+   if(base>17&&base<34)sites.set(species,{x,z,base,height:3.6+random(tx,tz,271828+719)*1.8+(species===1?1:0)});
+ }
+ check(sites.size===3,'Independent seed lookup finds oak, birch and pine test sites');
+ const fp=kernels.prepareMining.bind({state:fs,heights:fh,...view(forest),damageMeta:forest.damageMeta,mining:forest.mining},{dt:.1,pressed:1,seed:271828});
+ for(const [species,site] of sites)for(const part of ['trunk','crown']){
+   const pose=forestState.slice();pose[0]=site.x;pose[1]=site.base+(part==='trunk'?2:site.height);pose[2]=site.z-3;pose[3]=0;pose[4]=0;pose[16]=0;
+   rt.device.queue.writeBuffer(fs.gpuBuffer,0,pose);rt.batch().dispatch(fp,[1]).submit();await rt.idle();const first=await rt.read(fs);
+   check(first[18]===1&&Math.abs(first[21]-site.z)<2.2&&Math.abs(first[20]-pose[1])<.02,`${['Oak','Birch','Pine'][species]} ${part} is picked at its visible volume`);
+   await events(forest,[{x:Math.round(first[19]*100),y:Math.round(first[20]*100),z:Math.round(first[21]*100),radius:24,power:65535}]);
+   rt.batch().dispatch(fp,[1]).submit();await rt.idle();const second=await rt.read(fs);
+   check(second[18]===0||second[21]>first[21]+.1,`${['Oak','Birch','Pine'][species]} ${part} mining exposes a deeper surface`);
+ }
  // Full frame GPU timestamps, including all six gameplay kernels.
  if(rt.device.features.has('timestamp-query')){
    const bench=create(),bs=rt.createBuffer(new Float32Array(32)),bh=rt.createBuffer(66049*4),pixels=rt.createBuffer(1920*1080*4);

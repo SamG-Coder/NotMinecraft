@@ -3,7 +3,9 @@ const $=id=>document.getElementById(id);
 const canvas=$('world'), keys=new Set();
 let runtime, state, heights, pixels, sim, gen, render, simCall, genCall, renderCall;
 let ready=false, menu=true, reset=1, toggleFly=0, mx=0, my=0, width=0, height=0;
-let seed=271828, spawnX=0, spawnZ=0, last=0, lastHud=0, frames=0, hudTime=0;
+let seed=271828, spawnX=0, spawnZ=0, last=0, lastHud=0, frames=0;
+const FRAME_INTERVAL=1000/60, frameTimes=[];
+let nextFrameAt=0, hudElapsed=0;
 let querySet, queryResolve, queryRead, queryPending=false, gpuMs=0;
 let damage, damageStress, damageMeta, mining, prepare, accumulate, resolve, prepareCall, accumulateCall, resolveCall;
 let mineHeld=false, saveNeeded=false, lastMine=0, bufferSeed=seed, db;
@@ -71,11 +73,15 @@ function resize(){
 async function frame(now){
   if(!ready)return;
   try {
+    // Browser scheduling only: never submit gameplay frames faster than 60 Hz.
+    // Await the small remainder rather than dropping a nearly-on-time vsync.
+    while(performance.now()<nextFrameAt)await new Promise(r=>setTimeout(r,Math.max(1,nextFrameAt-performance.now())));
+    now=performance.now();
     while(bufferSeed!==seed){await saveWorld();await loadWorld(seed);}
     if(saveNeeded&&!mineHeld&&(menu||now-lastMine>1200)){try{await saveWorld();}catch(error){$('mining-status').textContent='LOCAL SAVE FAILED — KEEP THIS TAB OPEN';console.warn(error);lastMine=now;}}
     if(document.hidden){last=0;requestAnimationFrame(frame);return;}
     resize();
-    const dt=last?Math.min((now-last)/1000,0.05):0;last=now;
+    const elapsed=last?now-last:0;const dt=Math.min(elapsed/1000,0.05);last=now;
     const active=!menu&&document.pointerLockElement===canvas;
     const pressed=active&&mineHeld;if(pressed){saveNeeded=true;lastMine=now;$('mining-status').textContent='MINING · 1 CM FRACTURE';}
     simCall.setScalars({dt:active?dt:0,forward:active?Number(keys.has('KeyW'))-Number(keys.has('KeyS')):0,strafe:active?Number(keys.has('KeyD'))-Number(keys.has('KeyA')):0,rise:active?Number(keys.has('Space'))-Number(keys.has('ControlLeft')||keys.has('KeyC')):0,lookX:mx,lookY:my,sprint:Number(keys.has('ShiftLeft')||keys.has('ShiftRight')),toggleFly,reset,seed,spawnX,spawnZ});
@@ -89,10 +95,10 @@ async function frame(now){
     batch.endPass();
     batch.encoder.copyBufferToTexture({buffer:pixels.gpuBuffer,bytesPerRow:width*4,rowsPerImage:height},{texture:canvas.getContext('webgpu').getCurrentTexture()},[width,height,1]);
     if(measure){batch.encoder.resolveQuerySet(querySet,0,2,queryResolve,0);batch.encoder.copyBufferToBuffer(queryResolve,0,queryRead,0,16);}
-    batch.submit();frames++;
+    batch.submit();if(elapsed>0){frames++;hudElapsed+=elapsed;}const submittedAt=performance.now();nextFrameAt=submittedAt+FRAME_INTERVAL;frameTimes.push(submittedAt);if(frameTimes.length>180)frameTimes.shift();
     if(measure){queryPending=true;queryRead.mapAsync(GPUMapMode.READ).then(()=>{const t=new BigUint64Array(queryRead.getMappedRange());gpuMs=Number(t[1]-t[0])/1e6;queryRead.unmap();queryPending=false;}).catch(fail);}
     if(now-lastHud>500){
-      lastHud=now;const fps=frames*1000/(now-hudTime);frames=0;hudTime=now;
+      lastHud=now;const fps=hudElapsed?frames*1000/hudElapsed:0;frames=0;hudElapsed=0;
       $('fps').innerHTML=`${Math.round(fps)} <small>FPS</small>`;$('gpu-time').innerHTML=`${querySet?gpuMs.toFixed(2):'N/A'} <small>MS</small>`;
       // Only 52 bytes for the HUD twice per second. Never read pixels or world data.
       runtime.read(state,Float32Array,52).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;$('mode').textContent=s[6]>.5?'FLYING · SPACE ↑ / CTRL ↓':'ON FOOT';}).catch(fail);
@@ -123,10 +129,9 @@ async function start(){
   resolveCall=resolve.bind({mining,damageKeys:damage.damageKeys,damageStress,damageMask:damage.damageMask,damageMeta},{seed});
   canvas.getContext('webgpu').configure({device:runtime.device,format:'rgba8unorm',alphaMode:'opaque',usage:GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
   if(runtime.device.features.has('timestamp-query')){querySet=runtime.device.createQuerySet({type:'timestamp',count:2});queryResolve=runtime.device.createBuffer({size:16,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC});queryRead=runtime.device.createBuffer({size:16,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});}
-  ready=true;$('play').disabled=false;$('play').innerHTML='Explore this world <span>↗</span>';$('status').textContent='WORLD ONLINE';hudTime=performance.now();
+  ready=true;$('play').disabled=false;$('play').innerHTML='Explore this world <span>↗</span>';$('status').textContent='WORLD ONLINE';
   // Explicit diagnostics hook for reproducible GPU correctness and performance checks.
-  window.game={runtime,state,heights,damage,damageMeta,damageStress,mining,get pixels(){return pixels;},get size(){return [width,height];},get gpuMs(){return gpuMs;},get ready(){return ready;},get seed(){return seed;},setWorld(s,x=0,z=0){$('seed').value=s;$('spawn-x').value=x;$('spawn-z').value=z;return readWorld();}};
+  window.game={runtime,state,heights,damage,damageMeta,damageStress,mining,frameLimit:60,get frameTimes(){return frameTimes.slice();},get pixels(){return pixels;},get size(){return [width,height];},get gpuMs(){return gpuMs;},get ready(){return ready;},get seed(){return seed;},setWorld(s,x=0,z=0){$('seed').value=s;$('spawn-x').value=x;$('spawn-z').value=z;return readWorld();}};
   requestAnimationFrame(frame);
 }
 start().catch(fail);
-
