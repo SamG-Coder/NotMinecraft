@@ -60,7 +60,7 @@ async function loadWorld(nextSeed){
     for(const [b,data] of [[damageMeta,saved.meta],[damage.damageMap,saved.map],[damage.damageKeys,saved.keys],[damage.damageMask,saved.mask],[damageStress,saved.stress]])runtime.device.queue.writeBuffer(b.gpuBuffer,0,data);
     runtime.device.queue.writeBuffer(state.gpuBuffer,68,new Float32Array([n]));
   }
-  runtime.device.queue.writeBuffer(state.gpuBuffer,88,new Float32Array([0,0,0,0,0,0,0,-1,0,0]));observedBlasts=0;placeTnt=false;
+  runtime.device.queue.writeBuffer(state.gpuBuffer,88,new Float32Array(10+64*8));runtime.device.queue.writeBuffer(state.gpuBuffer,116,new Float32Array([-1]));observedBlasts=0;placeTnt=false;
   bufferSeed=nextSeed;saveNeeded=false;reset=1;
 }
 function resize(){
@@ -101,8 +101,8 @@ async function frame(now){
       lastHud=now;const fps=hudElapsed?frames*1000/hudElapsed:0;frames=0;hudElapsed=0;
       $('fps').innerHTML=`${Math.round(fps)} <small>FPS</small>`;$('gpu-time').innerHTML=`${querySet?gpuMs.toFixed(2):'N/A'} <small>MS</small>`;
       // Small state and damage telemetry twice per second; no pixel readback.
-      runtime.read(state,Float32Array,120).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;if(s[22]>0)$('mining-status').textContent='TNT ARMED - FUSE PAUSES IN MENU';if(s[28]!==observedBlasts){observedBlasts=s[28];saveNeeded=true;lastMine=performance.now();$('mining-status').textContent='TNT DETONATED - WAITING TO SAVE CRATER';}
-        $('tnt-status').textContent=s[22]>0?`TNT FUSE - ${s[22].toFixed(1)}s`:(s[29]===0?'NO TARGET WITHIN 6 M - AIM AT CLOSER GROUND':s[29]===3?'TNT TOO CLOSE TO YOU - AIM FURTHER AHEAD':s[29]===4?'NO ROOM FOR TNT - AIM AT A CLEARER SURFACE':'RIGHT-CLICK TO PLACE TNT - 6 M REACH');$('mode').textContent=s[6]>.5?'FLYING - SPACE UP / CTRL DOWN':'ON FOOT';}).catch(fail);
+      runtime.read(state,Float32Array,128).then(s=>{$('coords').textContent=`X ${s[0].toFixed(2)}   Y ${s[1].toFixed(2)}   Z ${s[2].toFixed(2)}`;if(s[31]>0)$('mining-status').textContent='TNT ARMED - FUSE PAUSES IN MENU';if(s[28]!==observedBlasts){observedBlasts=s[28];saveNeeded=true;lastMine=performance.now();$('mining-status').textContent='TNT DETONATED - WAITING TO SAVE CRATER';}
+        $('tnt-status').textContent=s[31]>0?`${s[31]} / 64 TNT - NEXT FUSE ${s[22].toFixed(1)}s`:(s[29]===2?'64 TNT LIMIT - WAIT FOR A FREE SLOT':s[29]===0?'NO TARGET WITHIN 6 M - AIM AT CLOSER GROUND':s[29]===3?'TNT TOO CLOSE TO YOU - AIM FURTHER AHEAD':s[29]===4?'NO ROOM FOR TNT - AIM AT A CLEARER SURFACE':'RIGHT-CLICK TO PLACE TNT - 6 M REACH');$('mode').textContent=s[6]>.5?'FLYING - SPACE UP / CTRL DOWN':'ON FOOT';}).catch(fail);
       runtime.read(damageMeta,Uint32Array).then(m=>{if(m[1])$('mining-status').textContent='EDIT CAPACITY REACHED · EXISTING HOLES PRESERVED';$('edit-pages').textContent=`${m[0]} / 4096 EDIT PAGES`;}).catch(fail);
     }
     // Bound GPU queue depth to one frame; no latency spiral under heavy load.
@@ -118,7 +118,7 @@ async function start(){
   prepare=await runtime.kernel(source,{entry:'prepareMining',workgroupSize:[1,1,1]});
   accumulate=await runtime.kernel(source,{entry:'accumulateMining',workgroupSize:[128,1,1]});
   resolve=await runtime.kernel(source,{entry:'resolveMining',workgroupSize:[128,1,1]});
-  state=runtime.createBuffer(new Float32Array(32));heights=runtime.createBuffer(66049*4);
+  state=runtime.createBuffer(new Float32Array(32+64*8));heights=runtime.createBuffer(66049*4);
   damage={damageMap:runtime.createBuffer(8192*4),damageKeys:runtime.createBuffer(4096*16),damageMask:runtime.createBuffer(4096*4096)};
   damageStress=runtime.createBuffer(4096*2048);damageMeta=runtime.createBuffer(16);mining=runtime.createBuffer(512*4);
   try{db=await openDatabase();}catch{$('mining-status').textContent='LOCAL STORAGE UNAVAILABLE · SESSION ONLY';}

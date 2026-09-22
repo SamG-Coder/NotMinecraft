@@ -55,13 +55,15 @@ Edits survive movement, terrain-cache regeneration and same-seed teleports. They
 
 While playing, **right-click** to place TNT, regardless of the selected tool. Alternatively, press **2** (or choose **TNT** in the menu) and left-click. Press **1** to return to mining. Aim at a surface within **6 m**, a little ahead of your feet; the HUD explains missing targets, blocked space and player overlap.
 
-- Placement reaches 6 m and checks for a clear 32 cm casing near the aimed surface, outside the player's body. Sky clicks do nothing.
-- One charge can be armed at a time. Its red casing flashes during a **3-second fuse**, which pauses in the menu.
+- Placement reaches 6 m and checks for clear space outside the player and other charges. Each metre-wide bundle is modeled in actual 1 cm cells: 16 separate sticks with stepped tops, recessed grooves, a paper band, TNT lettering and a raised burning fuse. Sky clicks do nothing.
+- Up to **64 charges** can be armed at once, with independent **3-second fuses**. The HUD shows the live count and next fuse. Fuses and physics pause in the menu.
 - The blast applies an **80 cm radius** damage field with seeded fracture edges. It uses the same saturating atomic counters and centimetre removal bits as mining. Trunks, foliage and terrain can all be removed.
 - Craters autosave with the world's mining data. Wait for **MINING SAVED LOCALLY** before closing. Armed charges are transient: changing seeds or reloading clears them; completed craters remain.
-- A blast preflights the existing 4096-page pool and rejects the event in full if there is insufficient capacity. No old edits are evicted. Charges stay where placed; there is no falling TNT, chain reaction, player damage or debris simulation in this version.
+- Explosions push other live TNT within **4 m**. Outward impulse falls quadratically with distance, plus an upward kick; each charge retains its own fuse. Motion uses **120 Hz fixed steps**, gravity, terrain/tree/charge collision, bounce and ground friction. Collision uses bounded body probes, consistent with the player controller.
+- Simultaneously expired charges queue in stable slot order; at most one terrain blast is processed per frame. No expired charge is overwritten or silently skipped.
+- Terrain edits preflight the existing 4096-page pool and reject an entire blast edit if space runs out. The physical explosion and push still occur, and the HUD reports the edit limit. No old edits are evicted. Player damage, detached debris and accelerated chain-reaction ignition are not implemented.
 
-Placement, fuse timing, casing rendering, collision and explosion logic are all in `kernels/world.cu`. The host only supplies the selected input and transports save data. The mining command buffer is 2 KiB to fit up to 343 blast pages. Existing workgroup counts are reused with strided loops over larger events.
+Placement, fuse timing, casing rendering, collision and explosion logic are all in `kernels/world.cu`. The host only supplies input, transports save data, and allocates the 2 KiB charge pool within the state buffer. The mining command buffer is 2 KiB to fit up to 343 blast pages. Existing workgroup counts are reused with strided loops over larger events.
 
 ## Representation and performance
 
@@ -72,7 +74,7 @@ Placement, fuse timing, casing rendering, collision and explosion logic are all 
 - **Empty-space skipping.** Rays traverse 2 m macro cells, use local height/slope bounds to skip air, then traverse centimetre cells near a surface. Tree volumes use analytic box intersections. No CPU-generated voxel meshes, per-block draw calls, or giant dense voxel buffers.
 - **Exact detail is the default.** The optional faster mode uses 4 cm terrain detail beyond 24 m and 16 cm beyond 64 m in pristine worlds. Once edits exist, rendering stays at 1 cm so distant detail changes cannot fill holes back in. Subpixel material and face-lighting detail is filtered to suppress grid moiré; geometry remains unchanged.
 - **GPU-resident simulation and pixels.** Six kernels run in order: `simulate`, `generate`, `prepareMining`, `accumulateMining`, `resolveMining`, `render`. `replayMining` is a seventh entry for integer event replay and tests. All seven are in `world.cu`. The CUDA output buffer is copied directly into the browser canvas texture. There is no handwritten WGSL game shader or JavaScript scene renderer.
-- **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 136 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
+- **Minimal browser host.** `app.js` handles input events, UI, resource allocation, dispatch, timestamps, presentation, and save I/O. It reads 144 bytes of HUD telemetry twice per second. At a save boundary between frames it also snapshots allocated damage pages; this is not part of rendering. It never reads pixels or terrain geometry to render the game.
 - **Accumulated atomic damage.** Only edited 32 cm pages have logical damage state: 512 saturating integer counters on a 4 cm lattice, plus one removal bit for each of 32,768 centimetre voxels. World seed and voxel position determine immutable fracture thresholds. Same accepted integer events give the same final spatial state independent of processing order. See the [destruction design](docs/destruction.md).
 - **Bounded damage memory.** The GPU reserves a 4096-page pool: 24 MiB for counters/masks plus about 96 KiB for keys and lookup. Saved data includes only allocated page prefixes plus the lookup table. Capacity exhaustion rejects a new stroke in full and reports it, preserving existing edits. The current version does not evict or stream damage pages out of that pool.
 - **Uncapped frame scheduling.** No fixed FPS limit or timer delay is applied. Frames follow browser animation callbacks and GPU availability; simulation uses elapsed time.
@@ -117,7 +119,8 @@ npm run test:ui        # Real browser input, pointer lock, settings, screenshots
 npm run test:native    # Optional: compile and execute the same .cu with NVCC
 npm test               # Also compares against the native files, if generated
 npm run test:mining    # Atomic state, fracture, collision and mining benchmarks
-node scripts/tnt-ui-test.mjs # Placement, fuse, explosion and crater persistence
+node scripts/tnt-ui-test.mjs # Multiple placements, fuses, explosions and persistence
+node scripts/test.mjs tnt # Forces, deterministic motion, collision, pool and native CUDA agreement
 npm run test:mining-ui # Real mining input, cache travel, per-seed save and reload
 ```
 

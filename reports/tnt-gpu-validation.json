@@ -1,0 +1,27 @@
+{
+  "passed": [
+    "All 544 TNT state values agree with native CUDA within 0.0001",
+    "One detonation preserves three unexploded charges",
+    "Radial impulse agrees with independent distance falloff, and excludes TNT outside 4 m",
+    "Explosion lifts nearby TNT without prematurely consuming its fuse",
+    "Identical starting charges and timestep reproduce the same state bit-for-bit",
+    "Impulse becomes observable horizontal and upward motion",
+    "Paused simulation preserves every charge, fuse and velocity",
+    "Simultaneous expiries queue deterministically and all three blasts execute exactly once",
+    "Each queued blast reaches the atomic terrain-damage pipeline",
+    "120 Hz fixed physics agrees across different frame timestep partitions",
+    "Gravity and collision stop TNT above surviving ground",
+    "The full 64-charge pool remains resident without overwriting a slot",
+    "Pool exhaustion rejects placement without overwriting existing TNT",
+    "Full-pool detailed models render an opaque, populated framebuffer",
+    "No WebGPU validation errors"
+  ],
+  "errors": [],
+  "benchmarks": [
+    {
+      "scene": "64 moving detailed TNT models: physics, damage dispatches and rendering",
+      "resolution": "1280x720",
+      "averageSubmissionAndGpuMs": 8.048124998807907
+    }
+  ]
+}

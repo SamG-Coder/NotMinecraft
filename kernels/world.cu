@@ -141,8 +141,14 @@ __device__ int solidTree(float x,float y,float z,unsigned int seed,const unsigne
     }
     return 0;
 }
+// TNT pool: state[30] high-water slot count, [31] live count. 64 slots at
+// state[32 + slot*8]: fuse, xyz, velocity xyz, occupied. No per-frame CPU geometry.
+__device__ float tntHalf() {return 0.5f;}
 __device__ int tntBodyBlocked(float x,float eye,float z,const float* state) {
-    return state[22]>0.0f && fabsf(x-state[23])<0.46f && fabsf(z-state[25])<0.46f && eye>state[24]-0.16f && eye-1.75f<state[24]+0.16f;
+    for(int i=0;i<int(state[30]);i++){int q=32+i*8;
+        if(state[q+7]>0.0f && fabsf(x-state[q+1])<0.3f+tntHalf() && fabsf(z-state[q+3])<0.3f+tntHalf() && eye>state[q+2]-tntHalf() && eye-1.75f<state[q+2]+tntHalf())return 1;
+    }
+    return 0;
 }
 // State: xyz, yaw, pitch, vertical velocity, flying, initialized,
 // cache origin xz, cache dirty, grounded, distance travelled.
@@ -212,6 +218,41 @@ __device__ float boxHit(float3 o,float3 inv,float3 lo,float3 hi) {
     float leave=fminf(fmaxf(ax,bx),fminf(fmaxf(ay,by),fmaxf(az,bz)));
     if(leave>=fmaxf(enter,0.0f))return fmaxf(enter,0.0f);
     return 10000.0f;
+}
+// Centimetre-built bundle: 16 separate sticks, stepped tops, band, and fuse.
+// Local coordinates are integer 1 cm cells inside a 1 m casing.
+__device__ int tntVoxel(int x,int y,int z) {
+    if(x<0||x>=100||z<0||z>=100||y<0||y>=114)return 0;
+    if(y>=98){if(x>=47&&x<=52&&z>=47&&z<=52)return y>=110?4:3;return 0;}
+    if(y>=38&&y<61)return 2;
+    int a=x%25;int b=z%25;int top=94+((x/25+z/25)%2)*4;
+    if(a>=2&&a<=22&&b>=2&&b<=22&&y<top)return 1;
+    return 0;
+}
+__device__ int tntLetter(int x,int y) {
+    // Three 5x5 glyphs, enlarged to 2 cm pixels across the paper band.
+    if(x<33||x>=67||y<44||y>=54)return 0;
+    int col=(x-33)/2;int row=(53-y)/2;int glyph=col/6;int c=col%6;
+    if(c>=5)return 0;if(glyph==1)return c==0||c==4||c==row;
+    return row==0||c==2;
+}
+__device__ float4 tntShapeHit(float3 o,float3 d,float3 inv,float3 center) {
+    float3 lo=make_float3(center.x-0.5f,center.y-0.5f,center.z-0.5f);
+    float3 hi=make_float3(center.x+0.5f,center.y+0.64f,center.z+0.5f);
+    float t=boxHit(o,inv,lo,hi);if(t>=10000.0f)return make_float4(t,0.0f,0.0f,0.0f);
+    float leave=fminf(fmaxf((lo.x-o.x)*inv.x,(hi.x-o.x)*inv.x),fminf(fmaxf((lo.y-o.y)*inv.y,(hi.y-o.y)*inv.y),fmaxf((lo.z-o.z)*inv.z,(hi.z-o.z)*inv.z)));
+    float shade=0.8f;t+=0.0001f;
+    for(int step=0;step<350;step++){
+        if(t>leave)break;
+        int x=int(floorf((o.x+d.x*t-lo.x)*100.0f));int y=int(floorf((o.y+d.y*t-lo.y)*100.0f));int z=int(floorf((o.z+d.z*t-lo.z)*100.0f));
+        int part=tntVoxel(x,y,z);
+        if(part!=0){if(part==2 && (x<=1||x>=98||z<=1||z>=98)){int u=(x<=1||x>=98)?z:x;if(tntLetter(u,y)!=0)part=3;}return make_float4(t,float(part),shade,0.0f);}
+        float nx=(lo.x+float(x+(d.x>0.0f?1:0))*0.01f-o.x)*inv.x;
+        float ny=(lo.y+float(y+(d.y>0.0f?1:0))*0.01f-o.y)*inv.y;
+        float nz=(lo.z+float(z+(d.z>0.0f?1:0))*0.01f-o.z)*inv.z;
+        float next=fminf(nx,fminf(ny,nz));shade=next==ny?1.0f:(next==nx?0.65f:0.82f);t=fmaxf(t+0.0001f,next+0.0001f);
+    }
+    return make_float4(10000.0f,0.0f,0.0f,0.0f);
 }
 __device__ float minedBoxHit(float3 o,float3 d,float3 inv,float3 lo,float3 hi,const float* state,const unsigned int* damageMap,const int* damageKeys,const unsigned int* damageMask) {
     float t=boxHit(o,inv,lo,hi);if(t>=10000.0f || state[17]==0.0f)return t;
@@ -324,11 +365,15 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
         if(cx>=0&&cx<256&&cz>=0&&cz<256){int i=cz*257+cx;float4 h=make_float4(heights[i],heights[i+1],heights[i+257],heights[i+258]);
             if(bilinear(h,wx*0.5f-float(cx),wz*0.5f-float(cz))<15.2f){hit=water;material=6;shade=1.0f;}}
     }
-    // One armed 32 cm charge; the red casing and fuse pulse are CUDA-rendered.
-    if(state[22]>0.0f){
-        float3 center=make_float3(state[23]-state[8],state[24],state[25]-state[9]);
-        float th=boxHit(o,inv,make_float3(center.x-0.16f,center.y-0.16f,center.z-0.16f),make_float3(center.x+0.16f,center.y+0.16f,center.z+0.16f));
-        if(th<hit){hit=th;material=11;treeShade=0.85f;}
+    float tntPart=0.0f;float tntFuse=0.0f;
+    for(int ti=0;ti<int(state[30]);ti++){
+        int q=32+ti*8;if(state[q+7]==0.0f)continue;
+        float3 center=make_float3(state[q+1]-state[8],state[q+2],state[q+3]-state[9]);
+        // Coarse box rejects almost all charges before centimetre model traversal.
+        float coarse=boxHit(o,inv,make_float3(center.x-0.5f,center.y-0.5f,center.z-0.5f),make_float3(center.x+0.5f,center.y+0.64f,center.z+0.5f));
+        if(coarse>=hit||coarse>viewDistance)continue;
+        float4 th=tntShapeHit(o,d,inv,center);
+        if(th.x<hit){hit=th.x;material=11;treeShade=th.z;tntPart=th.y;tntFuse=state[q];}
     }
     if(material!=0 && hit<viewDistance) {
         float wx=state[8]+o.x+d.x*hit;float wy=o.y+d.y*hit;float wz=state[9]+o.z+d.z*hit;
@@ -349,7 +394,11 @@ __global__ void render(unsigned int* pixels,const float* heights,const float* st
             if(material==8){cr=0.8f;cg=0.79f;cb=0.69f;float scar=randomAt(int(floorf(wx*4.0f))+int(floorf(wy*16.0f))*17,int(floorf(wz*4.0f)),seed+821u);grain=scar>0.78f?0.3f:0.96f;}
         }
         if(material==5){cr=0.49f;cg=0.5f;cb=0.46f;}
-        if(material==11){cr=0.8f;cg=0.12f;cb=0.065f;grain=1.0f;if(fabsf(wy-state[24])<0.045f){cr=0.94f;cg=0.88f;cb=0.68f;}if(sinf(state[22]*22.0f)>0.7f){cr=1.0f;cg=0.8f;cb=0.5f;}}
+        if(material==11){cr=0.72f;cg=0.09f;cb=0.045f;grain=0.86f+0.14f*randomAt(int(floorf(wx*100.0f)),int(floorf(wz*100.0f))+int(floorf(wy*100.0f))*13,seed);
+            if(tntPart==2.0f){cr=0.93f;cg=0.89f;cb=0.76f;}if(tntPart==3.0f){cr=0.08f;cg=0.065f;cb=0.04f;}
+            if(tntPart==4.0f){cr=1.0f;cg=0.55f+0.3f*sinf(tntFuse*35.0f);cb=0.04f;shade=1.0f;}
+            if(tntFuse<0.8f&&sinf(tntFuse*28.0f)>0.6f){cr=fminf(1.0f,cr+0.22f);cg+=0.18f;cb+=0.12f;}
+        }
         if(material==7){cr=0.43f;cg=0.29f;cb=0.17f;}
         if(material==6){cr=0.14f;cg=0.43f;cb=0.49f;grain=1.0f;}
         float fog=1.0f-expf(-hit*hit*0.000055f);
@@ -396,14 +445,67 @@ __device__ void reserveMining(int vx,int vy,int vz,int radius,int power,unsigned
     mining[0]=1;mining[1]=vx;mining[2]=vy;mining[3]=vz;mining[4]=radius;mining[5]=power;mining[6]=count;
     damageMeta[3]=damageMeta[3]+1u;
 }
+__device__ void tntStats(float* state) {
+    int count=0;float nearest=10000.0f;int high=0;
+    for(int i=0;i<int(state[30]);i++){int q=32+i*8;if(state[q+7]>0.0f){count++;high=i+1;nearest=fminf(nearest,state[q]);}}
+    state[30]=float(high);state[31]=float(count);state[22]=count==0?0.0f:nearest;
+}
+__device__ int tntBoxBlocked(float x,float y,float z,int self,const float* heights,const float* state,unsigned int seed,const unsigned int* damageMap,const int* damageKeys,const unsigned int* damageMask) {
+    for(int i=0;i<int(state[30]);i++){int q=32+i*8;if(i!=self&&state[q+7]>0.0f&&fabsf(x-state[q+1])<0.999f&&fabsf(y-state[q+2])<0.999f&&fabsf(z-state[q+3])<0.999f)return 1;}
+    for(int iz=-1;iz<=1;iz++)for(int iy=-1;iy<=1;iy++)for(int ix=-1;ix<=1;ix++){
+        float px=x+float(ix)*0.499f;float py=y+float(iy)*0.499f;float pz=z+float(iz)*0.499f;
+        if(px<state[8]||px>=state[8]+512.0f||pz<state[9]||pz>=state[9]+512.0f){if(py<ground(px,pz,seed))return 1;}
+        else if(pickSolid(int(floorf(px*100.0f)),int(floorf(py*100.0f)),int(floorf(pz*100.0f)),heights,state,seed,damageMap,damageKeys,damageMask)!=0)return 1;
+    }
+    return 0;
+}
+__device__ int advanceTnt(float* state,const float* heights,unsigned int* damageMap,int* damageKeys,const unsigned int* damageMask,unsigned int* damageMeta,int* mining,float dt,unsigned int seed) {
+    if(dt<=0.0f||state[31]==0.0f)return 0;
+    // Fixed 120 Hz motion. Slot order, fuse expiry and radial impulses are stable.
+    state[26]+=fminf(dt,0.05f);float stepTime=1.0f/120.0f;
+    for(int sub=0;sub<6;sub++){
+        if(state[26]+0.000001f<stepTime)break;state[26]=fmaxf(0.0f,state[26]-stepTime);
+        for(int i=0;i<int(state[30]);i++){
+            int q=32+i*8;if(state[q+7]==0.0f)continue;state[q]=fmaxf(0.0f,state[q]-stepTime);
+            state[q+5]-=18.0f*stepTime;
+            for(int axis=0;axis<3;axis++){
+                int c=axis==0?1:(axis==1?3:2);int v=c+3;state[q+v]=fminf(20.0f,fmaxf(-20.0f,state[q+v]));
+                float delta=state[q+v]*stepTime;if(fabsf(delta)<0.000001f)continue;
+                float old=state[q+c];state[q+c]=old+delta;
+                if(tntBoxBlocked(state[q+1],state[q+2],state[q+3],i,heights,state,seed,damageMap,damageKeys,damageMask)!=0){
+                    float low=0.0f;float high=1.0f;
+                    for(int solve=0;solve<6;solve++){float mid=(low+high)*0.5f;state[q+c]=old+delta*mid;if(tntBoxBlocked(state[q+1],state[q+2],state[q+3],i,heights,state,seed,damageMap,damageKeys,damageMask)!=0)high=mid;else low=mid;}
+                    state[q+c]=old+delta*low;
+                    state[q+v]=fabsf(state[q+v])<1.0f?0.0f:-state[q+v]*0.18f;
+                    if(c==2&&delta<0.0f){state[q+4]*=0.86f;state[q+6]*=0.86f;}
+                }
+            }
+        }
+    }
+    // One terrain blast per frame bounds the expensive voxel work. Simultaneously
+    // expired charges remain queued in their slots, rather than losing events.
+    for(int i=0;i<int(state[30]);i++){
+        int q=32+i*8;if(state[q+7]==0.0f||state[q]>0.0f)continue;
+        float x=state[q+1];float y=state[q+2];float z=state[q+3];state[q+7]=0.0f;
+        reserveMining(int(roundf(x*100.0f)),int(roundf(y*100.0f)),int(roundf(z*100.0f)),80,768,damageMap,damageKeys,damageMeta,mining);
+        for(int j=0;j<int(state[30]);j++){
+            int r=32+j*8;if(state[r+7]==0.0f)continue;
+            float dx=state[r+1]-x;float dy=state[r+2]-y;float dz=state[r+3]-z;float dist=sqrtf(dx*dx+dy*dy+dz*dz);
+            if(dist>=4.0f)continue;
+            if(dist<0.001f){dx=(j%2==0?1.0f:-1.0f);dy=0.5f;dz=0.0f;dist=sqrtf(1.25f);}
+            float falloff=1.0f-dist/4.0f;float kick=14.0f*falloff*falloff;
+            state[r+4]+=dx/dist*kick;state[r+5]+=dy/dist*kick+3.0f*falloff;state[r+6]+=dz/dist*kick;
+        }
+        state[28]+=1.0f;state[17]=float(damageMeta[0]);tntStats(state);return 1;
+    }
+    tntStats(state);return 0;
+}
 __global__ void prepareMining(float* state,const float* heights,unsigned int* damageMap,int* damageKeys,const unsigned int* damageMask,unsigned int* damageMeta,int* mining,float dt,int pressed,unsigned int seed) {
     if(threadIdx.x!=0||blockIdx.x!=0)return;mining[0]=0;state[17]=float(damageMeta[0]);
-    // State 22: remaining fuse; 23..25: center; 28: completed blasts; 29: placement result.
-    if(state[22]>0.0f){
-        state[22]=fmaxf(0.0f,state[22]-dt);
-        if(state[22]==0.0f){reserveMining(int(roundf(state[23]*100.0f)),int(roundf(state[24]*100.0f)),int(roundf(state[25]*100.0f)),80,768,damageMap,damageKeys,damageMeta,mining);state[17]=float(damageMeta[0]);if(mining[0]!=0)state[28]+=1.0f;return;}
-    }
-    if(pressed==2){state[29]=0.0f;if(state[22]>0.0f){state[29]=2.0f;return;}}
+    int emitted=advanceTnt(state,heights,damageMap,damageKeys,damageMask,damageMeta,mining,dt,seed);
+    if(emitted!=0&&pressed!=2)return;
+    int slot=-1;
+    if(pressed==2){state[29]=0.0f;for(int i=0;i<64;i++){if(i>=int(state[30])||state[32+i*8+7]==0.0f){slot=i;break;}}if(slot<0){state[29]=2.0f;return;}}
     state[16]-=dt;if(pressed==0){state[16]=fmaxf(0.0f,state[16]);return;}if(state[16]>0.0f && pressed!=2)return;
     state[16]+=0.1f;state[18]=0.0f;
     int ox=int(floorf(state[0]*100.0f));int oy=int(floorf(state[1]*100.0f));int oz=int(floorf(state[2]*100.0f));
@@ -416,18 +518,19 @@ __global__ void prepareMining(float* state,const float* heights,unsigned int* da
         int x=int(floorf(o.x+d.x*t));int y=int(floorf(o.y+d.y*t));int z=int(floorf(o.z+d.z*t));
         if(pickSolid(ox+x,oy+y,oz+z,heights,state,seed,damageMap,damageKeys,damageMask)!=0){
             if(pressed==2){
-                // Search a short distance back from the aimed surface for a clear casing.
-                for(int attempt=0;attempt<12;attempt++){
-                    float back=28.0f+float(attempt)*4.0f;if(t<back){state[29]=3.0f;return;}
-                    float cx=floorf((float(ox)+o.x+d.x*(t-back)))*0.01f;
-                    float cy=floorf((float(oy)+o.y+d.y*(t-back)))*0.01f;
-                    float cz=floorf((float(oz)+o.z+d.z*(t-back)))*0.01f;
-                    int blocked=0;int bodyOverlap=0;
-                    if(fabsf(cx-state[0])<0.47f && fabsf(cz-state[2])<0.47f && cy+0.16f>state[1]-1.75f && cy-0.16f<state[1]){blocked=1;bodyOverlap=1;}
-                    for(int iz=-1;iz<=1;iz++)for(int iy=-1;iy<=1;iy++)for(int ix=-1;ix<=1;ix++)
-                        if(pickSolid(int(floorf((cx+float(ix)*0.16f)*100.0f)),int(floorf((cy+float(iy)*0.16f)*100.0f)),int(floorf((cz+float(iz)*0.16f)*100.0f)),heights,state,seed,damageMap,damageKeys,damageMask)!=0)blocked=1;
-                    state[29]=bodyOverlap!=0?3.0f:4.0f;
-                    if(blocked==0){state[22]=3.0f;state[23]=cx;state[24]=cy;state[25]=cz;state[29]=1.0f;return;}
+                // A metre-wide voxel bundle needs clear space and cannot overlap
+                // the player or another charge. Try above the hit, then towards it.
+                float hitX=(float(ox)+o.x+d.x*t)*0.01f;float hitY=(float(oy)+o.y+d.y*t)*0.01f;float hitZ=(float(oz)+o.z+d.z*t)*0.01f;
+                for(int attempt=0;attempt<28;attempt++){
+                    float cx=hitX;float cy=hitY+0.51f+float(attempt)*0.025f;float cz=hitZ;
+                    if(attempt>=12){float back=90.0f+float(attempt-12)*5.0f;if(t<back)continue;cx=(float(ox)+o.x+d.x*(t-back))*0.01f;cy=(float(oy)+o.y+d.y*(t-back))*0.01f;cz=(float(oz)+o.z+d.z*(t-back))*0.01f;}
+                    cx=floorf(cx*100.0f)*0.01f;cy=floorf(cy*100.0f)*0.01f;cz=floorf(cz*100.0f)*0.01f;
+                    int body=fabsf(cx-state[0])<0.8f&&fabsf(cz-state[2])<0.8f&&cy+0.5f>state[1]-1.75f&&cy-0.5f<state[1];
+                    state[29]=body!=0?3.0f:4.0f;
+                    if(body==0&&tntBoxBlocked(cx,cy,cz,-1,heights,state,seed,damageMap,damageKeys,damageMask)==0){
+                        int q=32+slot*8;state[q]=3.0f;state[q+1]=cx;state[q+2]=cy;state[q+3]=cz;state[q+4]=0.0f;state[q+5]=0.0f;state[q+6]=0.0f;state[q+7]=1.0f;
+                        state[23]=cx;state[24]=cy;state[25]=cz;state[30]=fmaxf(state[30],float(slot+1));state[29]=1.0f;tntStats(state);return;
+                    }
                 }
                 return;
             }

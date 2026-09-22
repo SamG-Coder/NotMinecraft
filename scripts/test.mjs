@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 const server=createStaticServer(fileURLToPath(new URL('../',import.meta.url)));
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 let browser;
-const suite=process.argv[2]==='mining'?'mining-gpu':'gpu';
+const suite=process.argv[2]==='mining'?'mining-gpu':process.argv[2]==='tnt'?'tnt-gpu':'gpu';
 try {
  browser=await chromium.launch({channel:process.env.TEST_BROWSER||'msedge',headless:true,args:['--enable-unsafe-webgpu']});
  const page=await browser.newPage();page.on('pageerror',e=>console.error(e));

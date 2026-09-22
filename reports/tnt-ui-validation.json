@@ -7,17 +7,17 @@
     "Right-click places TNT while Mine is selected",
     "Placement keeps mouse capture active",
     "Fuse pauses while the menu is open",
-    "A second click cannot detonate or replace the armed charge",
-    "Fuse applies one larger atomic blast within the page budget",
+    "A second click at a clear location adds another live TNT",
+    "Both charges detonate through the atomic blast pipeline",
     "TNT crater persists across reload",
-    "Reload does not re-arm or replay the exploded TNT",
+    "Reload does not re-arm or replay exploded TNT",
     "TNT placement and explosion have no WebGPU or browser errors"
   ],
   "errors": [],
   "meta": [
-    216,
+    432,
     0,
-    1635394,
-    1
+    3273102,
+    2
   ]
 }
