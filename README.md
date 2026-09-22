@@ -121,3 +121,13 @@ A browser test replaces requestAnimationFrame with 2 ms callbacks and checks act
 Tree generation changed with this forest update. Existing damage remains attached to its seed and coordinates, so old tree edits may not line up with the new trees.
 
 Generated native binaries, WGSL, screenshots and local reports go under ignored `artifacts/`. The checked-in `reports/` files record this validation run.
+
+## License and trademark disclosure
+
+NotMinecraft is licensed under the [MIT License](LICENSE). Copyright (c) 2026 SamG-Coder and NotMinecraft contributors. Third-party components retain their own licenses and notices, including those in [`engine/`](engine/).
+
+**NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.**
+
+Minecraft is a trademark of Microsoft Corporation. Minecraft names, branding and related intellectual property belong to Mojang and Microsoft. NotMinecraft is an independent project and is not affiliated with, endorsed by, or sponsored by Mojang or Microsoft. The MIT License covers this project's code; it does not grant rights to third-party trademarks or assets.
+
+See the official [Minecraft Usage Guidelines](https://www.minecraft.net/en-us/usage-guidelines).
